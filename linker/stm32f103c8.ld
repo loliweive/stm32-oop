@@ -65,4 +65,7 @@ SECTIONS
         . = ALIGN(4);
         _ebss = .;
     } > SRAM
+
+    /* Provide 'end' for _sbrk (used by malloc / FreeRTOS heap_4) */
+    end = .;
 }

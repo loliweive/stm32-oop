@@ -12,11 +12,16 @@ cmake -B build/test -DBUILD_MODE=host
 cmake --build build/test
 cd build/test && ctest --output-on-failure
 
-# 2. 编译 STM32 固件
+# 2. 编译 STM32 裸机固件 (Blinky, 608 bytes)
 cmake -B build/target -DBUILD_MODE=stm32f103
 cmake --build build/target
 
-# 3. 烧录 (需要 ST-Link)
+# 3. 编译 FreeRTOS 多任务固件 (LED + UART 回显, ~12KB)
+git submodule update --init  # 首次需要
+cmake -B build/freertos -DBUILD_MODE=freertos
+cmake --build build/freertos
+
+# 4. 烧录 (需要 ST-Link)
 openocd -f interface/stlink.cfg -f target/stm32f1x.cfg \
   -c "program build/target/stm32-oop.elf verify reset exit"
 ```
@@ -79,6 +84,27 @@ gpio_set(&led, 1);                        // 点亮 LED
 | LED 闪烁 | `src/app/blinky/main.c` | 板载 PC13，1Hz |
 | 呼吸灯 | `src/app/blinky/breathing.c` | 软件 PWM 渐变 |
 | UART 回显 | `src/app/uart_echo/main.c` | USART1, 115200-8N1 |
+| **FreeRTOS 多任务** | `src/app/freertos_demo/main.c` | LED (1Hz) + UART 回显 (115200) + `!` 打印任务列表 |
+
+## FreeRTOS 集成
+
+```
+cmake -B build/freertos -DBUILD_MODE=freertos && cmake --build build/freertos
+```
+
+- FreeRTOS Kernel V11 (git submodule)
+- ARM_CM3 GCC port + heap_4 (6KB heap)
+- LED task (优先级 1, 512B stack) + UART echo task (优先级 2, 1KB stack)
+- `delay_ms()` 自动切换为 `vTaskDelay()` (阻塞延时, 让出 CPU)
+- SysTick 由 FreeRTOS 管理, 与裸机 `delay.c` 通过 `#ifdef USE_FREERTOS` 条件编译
+
+## 构建模式
+
+| 模式 | 命令 | 输出 |
+|------|------|------|
+| Host 测试 | `-DBUILD_MODE=host` | x86 可执行文件, ctest |
+| 裸机固件 | `-DBUILD_MODE=stm32f103` | 608B Flash |
+| FreeRTOS | `-DBUILD_MODE=freertos` | ~12KB Flash, ~7KB SRAM |
 
 ## License
 
