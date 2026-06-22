@@ -36,6 +36,8 @@
 #include "onewire.h"
 #include "ds18b20.h"
 #include "cli.h"
+#include "ota_client.h"
+#include "ota_transport_shared.h"
 
 #include <stdio.h>
 #include <string.h>
@@ -159,6 +161,73 @@ static void cmd_uptime(CLI *c, int argc, char **argv)
                (unsigned long)(s % 60));
 }
 
+/* ── OTA 状态 ──────────────────────────────────────────────────── */
+static OtaTransport   ota_xport;
+static SharedXportCtx ota_xport_ctx;
+static OtaClient      ota_client;
+static bool           ota_in_progress = false;
+
+static void cmd_ota_start(CLI *c, int argc, char **argv)
+{
+    (void)argc; (void)argv;
+
+    if (ota_in_progress) {
+        cli_printf(c, "OTA already in progress\r\n");
+        return;
+    }
+
+    cli_printf(c, "Starting OTA firmware update...\r\n");
+    cli_printf(c, "CLI suspended — send firmware now.\r\n\r\n");
+
+    ota_in_progress = true;
+
+    /* 初始化 OTA (复用当前 UART) */
+    ota_transport_shared_create(&ota_xport, &ota_xport_ctx);
+    ota_xport_ctx.uart = &uart;
+    ota_xport_init(&ota_xport);
+
+    ota_client_init(&ota_client, &ota_xport);
+    ota_client_start(&ota_client);
+
+    /* 驱动 OTA 状态机 (CLI 在此时阻塞) */
+    while (ota_client_poll(&ota_client)) {
+        vTaskDelay(pdMS_TO_TICKS(10));  /* 让出 CPU */
+    }
+
+    if (ota_client_get_state(&ota_client) == OTA_STATE_COMPLETE) {
+        cli_printf(c, "\r\nOTA complete! Booting new firmware...\r\n");
+        ota_client_boot(&ota_client);
+        /* 不应到达 — boot 导致软复位 */
+    } else {
+        cli_printf(c, "\r\nOTA failed (error=%d). CLI restored.\r\n",
+                   ota_client.error_code);
+    }
+
+    ota_in_progress = false;
+    cli_prompt(c);
+}
+
+static void cmd_ota_status(CLI *c, int argc, char **argv)
+{
+    (void)argc; (void)argv;
+
+    if (!ota_in_progress) {
+        cli_printf(c, "OTA: idle (use 'ota-start' to begin update)\r\n");
+        return;
+    }
+
+    OtaClientState s = ota_client_get_state(&ota_client);
+    const char *state_names[] = {
+        "IDLE", "HANDSHAKE", "RECEIVING", "VERIFYING", "COMPLETE", "ERROR"
+    };
+
+    cli_printf(c, "OTA Status: %s\r\n", state_names[s]);
+    if (s == OTA_STATE_RECEIVING) {
+        uint8_t pct = ota_client_get_progress(&ota_client);
+        cli_printf(c, "Progress: %u%%\r\n", (unsigned)pct);
+    }
+}
+
 static void cmd_reset(CLI *c, int argc, char **argv)
 {
     (void)c; (void)argc; (void)argv;
@@ -183,6 +252,8 @@ static const CLICommand commands[] = {
     { "info",        cmd_info,        "Show system information" },
     { "uptime",      cmd_uptime,      "Show system uptime" },
     { "reset",       cmd_reset,       "Software reset MCU" },
+    { "ota-start",   cmd_ota_start,   "Start OTA firmware update" },
+    { "ota-status",  cmd_ota_status,  "Show OTA update status" },
     { NULL, NULL, NULL }
 };
 
