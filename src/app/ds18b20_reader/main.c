@@ -25,6 +25,7 @@
 #include "uart.h"
 #include "onewire.h"
 #include "ds18b20.h"
+#include "sensor.h"
 #include "delay.h"
 #include <stdio.h>  /* snprintf */
 
@@ -41,6 +42,7 @@
 
 static OneWireBus ow_bus;
 static DS18B20    sensor;
+static Sensor    *s;  /* 多态指针 */
 static UartPort   uart;
 
 int main(void)
@@ -70,8 +72,9 @@ int main(void)
     /* 3. 初始化 OneWire 总线 (PA1) */
     ow_init(&ow_bus, OW_PORT, OW_PIN);
 
-    /* 4. 初始化 DS18B20 传感器 */
-    if (!ds18b20_init(&sensor, &ow_bus)) {
+    /* 4. 初始化 DS18B20 传感器 (OOP Sensor 接口) */
+    Sensor *s = ds18b20_create(&sensor, &ow_bus);
+    if (!s || !sensor_is_present(s)) {
         uart_send_str(&uart, "ERROR: DS18B20 not found!\r\n");
         uart_send_str(&uart, "Check: VDD=3.3V, DQ=PA1 with 4.7k pull-up\r\n");
 
@@ -94,11 +97,10 @@ int main(void)
                    sensor.rom[4], sensor.rom[5], sensor.rom[6], sensor.rom[7]);
     uart_send_buf(&uart, (uint8_t *)buf, len);
 
-    /* 5. 主循环: 每秒读取温度 */
+    /* 5. 主循环: 每秒读取温度 (多态!) */
     while (1) {
-        float temp;
-
-        if (ds18b20_read_temp(&sensor, &temp)) {
+        float temp; uint8_t hum;
+        if (sensor_read(s, &temp, &hum)) {
             len = snprintf(buf, sizeof(buf),
                            "Temp: %+7.2f C  | ROM: %02X-%02X-%02X-%02X-%02X-%02X-%02X-%02X\r\n",
                            temp,
