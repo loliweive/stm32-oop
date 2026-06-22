@@ -147,6 +147,7 @@ elseif(BUILD_MODE STREQUAL "freertos")
         ${STM32_SRC_DIR}/app/freertos_demo/freertos_hooks.c
         ${STM32_SRC_DIR}/sensor/onewire.c
         ${STM32_SRC_DIR}/sensor/ds18b20.c
+        ${STM32_SRC_DIR}/sensor/dht11.c
         ${STM32_SRC_DIR}/cli/cli.c
         ${STM32_SRC_DIR}/ota/ota_protocol.c
         ${STM32_SRC_DIR}/ota/ota_flash.c

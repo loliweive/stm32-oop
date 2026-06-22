@@ -1,28 +1,12 @@
 /**
  * @file    main.c
- * @brief   FreeRTOS CLI + DS18B20 温度采集系统
+ * @brief   FreeRTOS CLI + 温湿度传感器 (DS18B20 / DHT11 可切换)
  *
- * 任务架构:
- *   ┌────────────────┐   Queue    ┌─────────────────┐
- *   │  Sensor Task   │── temp ──→│   CLI Task       │
- *   │  prio 2, 512B  │            │   prio 1, 1KB    │
- *   │  周期采样 2s    │            │   串口交互式命令行 │
- *   └────────────────┘            └─────────────────┘
- *
- * CLI 命令:
- *   help         显示所有命令
- *   temp         读取一次温度
- *   temp-stream  开始连续温度输出
- *   temp-stop    停止连续温度输出
- *   led on|off|toggle  控制板载 LED
- *   info         显示系统信息
- *   uptime       显示运行时间
- *   reset        软复位 MCU
- *
- * 硬件:
- *   PA1 = DS18B20 DQ (4.7kΩ 上拉到 3.3V)
- *   PA9 = USART1 TX, PA10 = USART1 RX
- *   PC13 = LED
+ * ── 传感器切换 ─────────────────────────────────────────────
+ *   修改下面的 SENSOR_TYPE 宏即可切换传感器:
+ *     SENSOR_DS18B20  → M2  DS18B20 (OneWire, -55~125°C, 0.0625°C)
+ *     SENSOR_DHT11    → M10 DHT11   (自有协议, 0~50°C + 湿度)
+ *   两个模块共用 PA1, 可插拔替换, 编译时选择。
  */
 
 #include "stm32f103xb.h"
@@ -33,34 +17,61 @@
 #include "rcc.h"
 #include "gpio.h"
 #include "uart.h"
-#include "onewire.h"
-#include "ds18b20.h"
 #include "cli.h"
 #include "ota_client.h"
 #include "ota_transport_shared.h"
-
 #include <stdio.h>
 #include <string.h>
 
-/* ── 引脚 ──────────────────────────────────────────────────────── */
-#define OW_PORT      GPIOA
-#define OW_PIN       GPIO_PIN_1
+/* ═══════════════════════════════════════════════════════════════
+ *  传感器选型 — 改这一行即可切换!
+ * ═══════════════════════════════════════════════════════════════ */
+#define SENSOR_DS18B20  1
+#define SENSOR_DHT11    2
+#define SENSOR_TYPE     SENSOR_DS18B20   /* <── 改成 SENSOR_DHT11 来切换! */
+
+/* ── 根据传感器类型包含对应驱动 ──────────────────────────── */
+#if SENSOR_TYPE == SENSOR_DS18B20
+  #include "onewire.h"
+  #include "ds18b20.h"
+  #define SENSOR_NAME  "DS18B20"
+#elif SENSOR_TYPE == SENSOR_DHT11
+  #include "dht11.h"
+  #define SENSOR_NAME  "DHT11"
+  #define OW_PORT   GPIOA    /* 复用相同的宏名 */
+  #define OW_PIN    GPIO_PIN_1
+#else
+  #error "Unknown SENSOR_TYPE — use SENSOR_DS18B20 or SENSOR_DHT11"
+#endif
+
+/* ── 引脚 ────────────────────────────────────────────────── */
+#if SENSOR_TYPE == SENSOR_DS18B20
+  #define OW_PORT      GPIOA
+  #define OW_PIN       GPIO_PIN_1
+#endif
 #define UART_TX_PORT GPIOA
 #define UART_TX_PIN  GPIO_PIN_9
 #define UART_RX_PORT GPIOA
 #define UART_RX_PIN  GPIO_PIN_10
 
-/* ── 温度数据 ──────────────────────────────────────────────────── */
+/* ── 传感器数据 ──────────────────────────────────────────── */
 typedef struct {
     float    temp_c;
+#if SENSOR_TYPE == SENSOR_DHT11
+    uint8_t  humidity;       /* DHT11 湿度 (%RH) */
+#endif
     uint32_t timestamp_ms;
     bool     valid;
 } TempReading;
 
-/* ── 全局对象 ──────────────────────────────────────────────────── */
+/* ── 全局对象 ────────────────────────────────────────────── */
 static QueueHandle_t temp_queue;
+#if SENSOR_TYPE == SENSOR_DS18B20
 static OneWireBus    ow_bus;
 static DS18B20       sensor;
+#elif SENSOR_TYPE == SENSOR_DHT11
+static DHT11         sensor;
+#endif
 static UartPort      uart;
 static GpioPin       led;
 static CLI           cli;
@@ -87,16 +98,21 @@ static void cmd_temp(CLI *c, int argc, char **argv)
     (void)argc; (void)argv;
 
     TempReading r;
-    /* 非阻塞尝试从队列获取最新读数 */
     if (xQueueReceive(temp_queue, &r, 0) == pdTRUE) {
         if (r.valid) {
+#if SENSOR_TYPE == SENSOR_DS18B20
             cli_printf(c, "Temperature: %+6.2f C  (t=%lus)\r\n",
                        (double)r.temp_c, (unsigned long)(r.timestamp_ms / 1000));
+#elif SENSOR_TYPE == SENSOR_DHT11
+            cli_printf(c, "Temperature: %2u C  Humidity: %2u %%RH  (t=%lus)\r\n",
+                       (unsigned)r.temp_c, (unsigned)r.humidity,
+                       (unsigned long)(r.timestamp_ms / 1000));
+#endif
         } else {
-            cli_printf(c, "Sensor error — CRC check failed\r\n");
+            cli_printf(c, "Sensor error — check failed\r\n");
         }
     } else {
-        cli_printf(c, "No reading available yet. Wait for sensor...\r\n");
+        cli_printf(c, "No reading yet. Sensor warming up...\r\n");
     }
 }
 
@@ -146,7 +162,7 @@ static void cmd_info(CLI *c, int argc, char **argv)
     cli_printf(c, "  RTOS:      FreeRTOS V11\r\n");
     cli_printf(c, "  Tick:      %lu Hz\r\n", (unsigned long)configTICK_RATE_HZ);
     cli_printf(c, "  Heap free: %lu bytes\r\n", (unsigned long)xPortGetFreeHeapSize());
-    cli_printf(c, "  Sensors:   DS18B20 (PA1, OneWire)\r\n");
+    cli_printf(c, "  Sensors:   " SENSOR_NAME " (PA1)\r\n");
     cli_printf(c, "\r\n");
 }
 
@@ -264,21 +280,23 @@ static void task_sensor(void *params)
 {
     (void)params;
     TempReading r;
+    memset(&r, 0, sizeof(r));
 
+#if SENSOR_TYPE == SENSOR_DS18B20
+    /* ── DS18B20 初始化 ─────────────────────────────────── */
     ow_init(&ow_bus, OW_PORT, OW_PIN);
     if (!ds18b20_init(&sensor, &ow_bus)) {
-        r.valid = false; r.temp_c = 0.0f;
+        r.valid = false;
         r.timestamp_ms = xTaskGetTickCount();
         xQueueSend(temp_queue, &r, 0);
         vTaskDelete(NULL);
     }
 
     while (1) {
-        /* LED 指示采样 */
-        gpio_set(&led, 0);
+        gpio_set(&led, 0);  /* LED 亮 — 采样中 */
 
         ds18b20_start_conversion(&sensor);
-        ds18b20_wait_conversion(&sensor);
+        ds18b20_wait_conversion(&sensor);  /* 750ms @ 12-bit */
 
         uint8_t sp[9];
         r.valid = ds18b20_read_scratchpad(&sensor, sp);
@@ -286,20 +304,39 @@ static void task_sensor(void *params)
         r.timestamp_ms = xTaskGetTickCount();
 
         xQueueOverwrite(temp_queue, &r);
-
         gpio_set(&led, 1);
 
-        /* 流模式: 立即推送给 CLI */
-        if (stream_mode) {
-            if (r.valid) {
-                cli_printf(&cli, "[%6lus] %+6.2f C\r\n",
-                           (unsigned long)(r.timestamp_ms / 1000),
-                           (double)r.temp_c);
-            }
+        if (stream_mode && r.valid) {
+            cli_printf(&cli, "[%6lus] %+6.2f C\r\n",
+                       (unsigned long)(r.timestamp_ms / 1000), (double)r.temp_c);
         }
-
         vTaskDelay(pdMS_TO_TICKS(2000));
     }
+
+#elif SENSOR_TYPE == SENSOR_DHT11
+    /* ── DHT11 初始化 ────────────────────────────────────── */
+    dht11_init(&sensor, OW_PORT, OW_PIN);
+    vTaskDelay(pdMS_TO_TICKS(1000));  /* DHT11 上电后需等待 1s */
+
+    while (1) {
+        gpio_set(&led, 0);  /* LED 亮 — 采样中 */
+
+        r.valid = dht11_read(&sensor);
+        r.temp_c = (float)dht11_get_temp(&sensor);
+        r.humidity = dht11_get_humidity(&sensor);
+        r.timestamp_ms = xTaskGetTickCount();
+
+        xQueueOverwrite(temp_queue, &r);
+        gpio_set(&led, 1);
+
+        if (stream_mode && r.valid) {
+            cli_printf(&cli, "[%6lus] %2u C  %2u %%RH\r\n",
+                       (unsigned long)(r.timestamp_ms / 1000),
+                       (unsigned)r.temp_c, (unsigned)r.humidity);
+        }
+        vTaskDelay(pdMS_TO_TICKS(2000));  /* DHT11 最大 1Hz */
+    }
+#endif
 }
 
 /* ═══════════════════════════════════════════════════════════════
