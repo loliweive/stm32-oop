@@ -35,8 +35,18 @@
 #include "ds18b20.h"
 #include "dht11.h"
 #include "light_sensor.h"
+#include "ssd1306.h"
+#include "i2c.h"
 
-/* ── 引脚 ────────────────────────────────────────────────── */
+/* ── OLED 引脚 ──────────────────────────────────────────── */
+#define OLED_I2C       I2C1
+#define OLED_ADDR      0x3C
+#define OLED_SCL_PORT  GPIOB
+#define OLED_SCL_PIN   GPIO_PIN_6
+#define OLED_SDA_PORT  GPIOB
+#define OLED_SDA_PIN   GPIO_PIN_7
+
+/* ── 传感器引脚 ──────────────────────────────────────────── */
 #define SENSOR_PORT   GPIOA
 #define SENSOR_PIN    GPIO_PIN_1
 #define UART_TX_PORT  GPIOA
@@ -63,6 +73,7 @@ static UartPort      uart;
 static GpioPin       led;
 static GpioPin       btn;            /* PB14 上拉按键 */
 static CLI           cli;
+static SSD1306       oled;
 static bool          stream_mode = false;
 
 /* ── UART 写回调 (给 CLI) ──────────────────────────────────────── */
@@ -313,6 +324,26 @@ static void task_sensor(void *params)
         r.timestamp_ms = xTaskGetTickCount();
 
         xQueueOverwrite(temp_queue, &r);
+
+        /* 刷新 OLED 显示 */
+        if (r.valid) {
+            char l1[22], l2[22];
+            snprintf(l1, sizeof(l1), "%.1f C",
+                     (double)r.temp_c);
+            snprintf(l2, sizeof(l2), "%s",
+                     r.humidity != 255
+                     ? ""  /* 占位 */
+                     : "");
+            if (r.humidity != 255) {
+                snprintf(l1, sizeof(l1), "%.1f C  %u%%RH",
+                         (double)r.temp_c, (unsigned)r.humidity);
+                snprintf(l2, sizeof(l2), "%s", sensor_name(sensor));
+            } else {
+                snprintf(l2, sizeof(l2), "%s", sensor_name(sensor));
+            }
+            ssd1306_show_sensor(&oled, "STM32 Sensor", l1, l2);
+        }
+
         gpio_set(&led, 1);
 
         if (stream_mode && r.valid) {
@@ -388,8 +419,24 @@ int main(void)
     /* 初始化按键 (PB14, 上拉 — 按下=低电平) */
     rcc_enable_gpio('B');
     GpioPin_ctor(&btn, GPIOB, GPIO_PIN_14);
-    gpio_set_mode(&btn, GPIO_CNF_PP | GPIO_MODE_IN);    /* 输入 + 内部上拉 */
-    gpio_set(&btn, 1);  /* 启用上拉 */
+    gpio_set_mode(&btn, GPIO_CNF_PP | GPIO_MODE_IN);
+    gpio_set(&btn, 1);
+
+    /* 初始化 OLED (PB6=SCL, PB7=SDA, I2C1) */
+    rcc_enable_i2c(1);
+    {
+        GpioPin scl, sda;
+        GpioPin_ctor(&scl, OLED_SCL_PORT, OLED_SCL_PIN);
+        gpio_set_mode(&scl, GPIO_CNF_ALT_OD | GPIO_MODE_OUT_50MHZ);
+        GpioPin_ctor(&sda, OLED_SDA_PORT, OLED_SDA_PIN);
+        gpio_set_mode(&sda, GPIO_CNF_ALT_OD | GPIO_MODE_OUT_50MHZ);
+
+        I2cPort i2c_port;
+        I2cPort_ctor(&i2c_port, OLED_I2C, 400000, 36000000);
+        i2c_init(&i2c_port);
+    }
+    ssd1306_init(&oled, OLED_I2C, OLED_ADDR);
+    ssd1306_show_sensor(&oled, "STM32-oop", "OLED Ready", "PB6/PB7 I2C");
 
     /* 创建温度数据队列 */
     temp_queue = xQueueCreate(1, sizeof(TempReading));
