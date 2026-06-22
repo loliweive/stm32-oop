@@ -21,7 +21,23 @@
  *  裸机模式 — SysTick 硬件驱动
  * ═══════════════════════════════════════════════════════════════ */
 
+/* delay_us 不依赖 SysTick — 裸机和 FreeRTOS 下共享同一实现 */
+void delay_us(uint32_t us)
+{
+    /* 粗略的指令循环延时
+       72MHz / 12 cycles ≈ 167ns/次 → us * 6 ≈ 1µs
+       注意：中断会延长延时 */
+    uint32_t count = us * 6;
+    while (count--) {
+        __NOP();
+    }
+}
+
 #ifndef USE_FREERTOS
+
+/* ═══════════════════════════════════════════════════════════
+ *  裸机模式 — SysTick 硬件驱动
+ * ═══════════════════════════════════════════════════════════ */
 
 static volatile uint32_t _ticks;
 
@@ -45,31 +61,22 @@ void delay_ms(uint32_t ms)
     }
 }
 
-void delay_us(uint32_t us)
-{
-    /* 粗略的指令循环延时
-       72MHz / 12 cycles ≈ 167ns/次 → us * 6 ≈ 1µs
-       注意：中断会延长延时 */
-    uint32_t count = us * 6;
-    while (count--) {
-        __NOP();
-    }
-}
-
 uint32_t millis(void)
 {
     return _ticks;
 }
 
 /* SysTick 中断处理 — 裸机模式 */
-
-
 void SysTick_Handler(void)
 {
     _ticks++;
 }
 
-#else  /* USE_FREERTOS — 使用 FreeRTOS 的 SysTick */
+#else  /* USE_FREERTOS */
+
+/* ═══════════════════════════════════════════════════════════
+ *  FreeRTOS 模式 — 使用内核 SysTick
+ * ═══════════════════════════════════════════════════════════ */
 
 #include "FreeRTOS.h"
 #include "task.h"
@@ -84,16 +91,6 @@ void delay_ms(uint32_t ms)
     /* 阻塞延时 — 让出 CPU 给其他任务
        裸机的 delay_ms 是忙等待, FreeRTOS 的是任务切换 */
     vTaskDelay(pdMS_TO_TICKS(ms));
-}
-
-void delay_us(uint32_t us)
-{
-    /* FreeRTOS 下微秒延时仍用指令循环 (任务切换开销太大)
-       对于 < 1ms 的短延时，指令循环比任务切换更精确 */
-    uint32_t count = us * 6;
-    while (count--) {
-        __NOP();
-    }
 }
 
 uint32_t millis(void)

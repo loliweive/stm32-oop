@@ -3,10 +3,17 @@
 
 void rcc_set_sysclk(RccClockSource src, uint8_t pll_mul)
 {
-    /* 1. Enable HSE (if using) */
+    uint32_t timeout;
+
+    /* 1. Enable HSE (if using), with timeout fallback to HSI */
     if (src == RCC_HSE || src == RCC_PLL) {
         RCC->CR |= RCC_CR_HSEON;
-        while (!(RCC->CR & RCC_CR_HSERDY)) {}
+        timeout = 0x10000;
+        while (!(RCC->CR & RCC_CR_HSERDY) && --timeout) {}
+        if (timeout == 0) {
+            /* HSE failed — fall back to HSI, don't hang */
+            return;
+        }
     }
 
     /* 2. Configure PLL */
@@ -19,20 +26,35 @@ void rcc_set_sysclk(RccClockSource src, uint8_t pll_mul)
         }
         RCC->CFGR = cfgr;
 
-        /* Enable PLL */
+        /* Enable PLL with timeout */
         RCC->CR |= RCC_CR_PLLON;
-        while (!(RCC->CR & RCC_CR_PLLRDY)) {}
+        timeout = 0x10000;
+        while (!(RCC->CR & RCC_CR_PLLRDY) && --timeout) {}
+        if (timeout == 0) {
+            /* PLL failed — fall back to HSI */
+            return;
+        }
     }
 
     /* 3. Switch SYSCLK to desired source */
     uint32_t cfgr = RCC->CFGR;
-    cfgr &= ~0x3; /* Clear SW */
-    cfgr |= (src == RCC_PLL) ? RCC_CFGR_SW_PLL :
-            (src == RCC_HSE) ? RCC_CFGR_SW_HSE : RCC_CFGR_SW_HSI;
+    cfgr &= ~((uint32_t)0x3); /* Clear SW bits (use hard mask for consistency) */
+    switch (src) {
+        case RCC_PLL: cfgr |= RCC_CFGR_SW_PLL; break;
+        case RCC_HSE: cfgr |= RCC_CFGR_SW_HSE; break;
+        default:                                           break; /* HSI */
+    }
     RCC->CFGR = cfgr;
-    while ((RCC->CFGR & RCC_CFGR_SWS_Msk) !=
-           ((src == RCC_PLL) ? (RCC_CFGR_SW_PLL << 2) :
-            (src == RCC_HSE) ? (RCC_CFGR_SW_HSE << 2) : 0)) {}
+
+    /* Wait for SWS to reflect the switch */
+    timeout = 0x10000;
+    uint32_t expected_sws;
+    switch (src) {
+        case RCC_PLL: expected_sws = RCC_CFGR_SW_PLL << 2; break;
+        case RCC_HSE: expected_sws = RCC_CFGR_SW_HSE << 2; break;
+        default:      expected_sws = 0;                     break;
+    }
+    while (((RCC->CFGR & RCC_CFGR_SWS_Msk) != expected_sws) && --timeout) {}
 }
 
 void rcc_get_config(RccConfig *cfg)

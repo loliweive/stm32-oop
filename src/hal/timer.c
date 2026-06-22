@@ -45,11 +45,18 @@ static void _stop(Timer *self)
 static void _set_period_us(Timer *self, uint32_t us)
 {
     TIM_Type *t = (TIM_Type *)self->tim;
-    /* Timer tick = pclk / (PSC + 1). Target: 1MHz for µs resolution */
-    uint32_t psc = (self->pclk_hz / 1000000) - 1;
+
+    /* 守卫: us=0 会导致 ARR 下溢为 0xFFFFFFFF */
+    if (us == 0) return;
+
+    /* Timer tick = pclk / (PSC + 1). Target: 1MHz for µs resolution.
+       如果 pclk < 1MHz, PSC 会下溢 — 加守卫保护 */
+    uint32_t psc = (self->pclk_hz >= 1000000)
+                   ? (self->pclk_hz / 1000000) - 1
+                   : 0;
     t->PSC = psc;
     t->ARR = us - 1;
-    t->EGR = 0x01;  /* Update generation */
+    t->EGR = 0x01;  /* UG: Update generation — 将 PSC/ARR 加载到影子寄存器 */
 }
 
 static void _set_pwm(Timer *self, uint8_t channel, uint16_t duty)

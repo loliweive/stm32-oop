@@ -69,10 +69,15 @@ void uart_init(UartPort *self)
 
     USART_Type *u = (USART_Type *)self->usart;
 
+    /* 守卫: baudrate=0 会导致除零异常 */
+    if (self->baudrate == 0) return;
+
     /* 计算 PCLK: USART1 在 APB2 (72MHz)，USART2/3 在 APB1 (36MHz) */
     uint32_t pclk = (u == USART1) ? 72000000 : 36000000;
 
-    /* BRR = PCLK / (16 × baud)，四舍五入 */
+    /* BRR = PCLK / baud (因为 BRR 编码的是 USARTDIV * 16 = PCLK / baud)
+       参考手册公式: USARTDIV = PCLK / (16 × baud)
+       但 BRR 寄存器存储 USARTDIV * 16 = PCLK / baud */
     u->BRR = (pclk + self->baudrate / 2) / self->baudrate;
 
     /* 使能 USART + 发送 + 接收 */

@@ -104,14 +104,18 @@ static void _gpio_toggle(GpioPin *self)
  */
 static void _gpio_set_mode(GpioPin *self, uint8_t mode)
 {
+    /* 守卫: pin=0 时后续移位操作会导致未定义行为 */
+    if (self->pin == 0) return;
+
     GPIO_Type *reg = (GPIO_Type *)self->port;
     uint32_t pos = 0;
-    uint16_t mask = self->pin;
 
     /* 找到 pin 的位置 (0..15) */
     for (pos = 0; pos < 16; pos++) {
-        if (mask & (1 << pos)) break;
+        if (self->pin & (1 << pos)) break;
     }
+    /* 未找到匹配位 → 退出 (不应发生, pin!=0 保证了至少有一个位) */
+    if (pos >= 16) return;
 
     /* 根据 pin 的位置选择 CRL (0-7) 或 CRH (8-15) */
     if (pos < 8) {

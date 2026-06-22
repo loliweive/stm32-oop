@@ -58,11 +58,11 @@ extern "C" {
  * @field full     满标志，用于区分 empty vs full
  */
 typedef struct {
-    uint8_t *buf;        /**< 调用者分配的存储空间 */
-    size_t   capacity;   /**< 总容量 */
-    size_t   head;       /**< 写索引 (生产者推进) */
-    size_t   tail;       /**< 读索引 (消费者推进) */
-    bool     full;       /**< 满标志：区分 empty 和 full */
+    uint8_t        *buf;      /**< 调用者分配的存储空间 */
+    size_t          capacity; /**< 总容量 */
+    volatile size_t head;     /**< 写索引 (ISR 生产者推进) */
+    volatile size_t tail;     /**< 读索引 (主循环消费者推进) */
+    volatile bool   full;     /**< 满标志: ISR push 可能置 true, 主循环 pop 置 false */
 } RingBuffer;
 
 /**

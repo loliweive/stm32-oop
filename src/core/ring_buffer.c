@@ -40,6 +40,9 @@
  */
 void rb_init(RingBuffer *rb, uint8_t *buf, size_t capacity)
 {
+    /* 守卫: capacity=0 导致取模操作除零 (UB on Cortex-M3) */
+    if (rb == NULL || buf == NULL || capacity == 0) return;
+
     rb->buf      = buf;
     rb->capacity = capacity;
     rb->head     = 0;      /* 写指针归零 */

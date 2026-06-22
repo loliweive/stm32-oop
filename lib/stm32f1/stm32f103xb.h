@@ -265,6 +265,26 @@ typedef struct {
 #define I2C1                ((I2C_Type *)I2C1_BASE)
 #define I2C2                ((I2C_Type *)I2C2_BASE)
 
+/* I2C_CR1 */
+#define I2C_CR1_PE          (1 << 0)
+#define I2C_CR1_START       (1 << 8)
+#define I2C_CR1_STOP        (1 << 9)
+#define I2C_CR1_ACK         (1 << 10)
+#define I2C_CR1_SWRST       (1 << 15)
+
+/* I2C_SR1 */
+#define I2C_SR1_SB          (1 << 0)
+#define I2C_SR1_ADDR        (1 << 1)
+#define I2C_SR1_BTF         (1 << 2)
+#define I2C_SR1_TXE         (1 << 7)
+#define I2C_SR1_RXNE        (1 << 6)
+#define I2C_SR1_AF          (1 << 10)
+#define I2C_SR1_BERR        (1 << 8)
+#define I2C_SR1_ARLO        (1 << 9)
+
+/* I2C_SR2 */
+#define I2C_SR2_BUSY        (1 << 1)
+
 /* --- SPI --- */
 typedef struct {
     volatile uint32_t CR1;
@@ -278,6 +298,19 @@ typedef struct {
 
 #define SPI1                ((SPI_Type *)SPI1_BASE)
 #define SPI2                ((SPI_Type *)SPI2_BASE)
+
+/* SPI_CR1 */
+#define SPI_CR1_CPHA        (1 << 0)
+#define SPI_CR1_CPOL        (1 << 1)
+#define SPI_CR1_MSTR        (1 << 2)
+#define SPI_CR1_BR_Pos      3
+#define SPI_CR1_SPE         (1 << 6)
+#define SPI_CR1_SSI         (1 << 8)
+#define SPI_CR1_SSM         (1 << 9)
+
+/* SPI_SR */
+#define SPI_SR_RXNE         (1 << 0)
+#define SPI_SR_TXE          (1 << 1)
 
 /* --- ADC --- */
 typedef struct {
@@ -298,5 +331,16 @@ typedef struct {
 } ADC_Type;
 
 #define ADC1                ((ADC_Type *)ADC1_BASE)
+
+/* ADC_CR2 */
+#define ADC_CR2_ADON        (1 << 0)
+#define ADC_CR2_CAL         (1 << 2)
+#define ADC_CR2_SWSTART     (1 << 22)
+
+/* ADC_SR */
+#define ADC_SR_EOC          (1 << 1)
+
+/* ADC sample time */
+#define ADC_SMPR_SMP_55_5   0x5
 
 #endif /* STM32F103XB_H */

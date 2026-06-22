@@ -1,3 +1,7 @@
+/**
+ * @file    adc.c
+ * @brief   ADC 驱动 — 使用 CMSIS 位定义
+ */
 #include "adc.h"
 #include "stm32f103xb.h"
 
@@ -10,13 +14,15 @@ void AdcPort_ctor(AdcPort *self, void *adc)
 void adc_init(AdcPort *self)
 {
     ADC_Type *a = (ADC_Type *)self->adc;
-    /* Turn on ADC */
-    a->CR2 |= 0x01;  /* ADON */
-    /* Wait for stabilization (~10µs at startup) */
+
+    /* ADON: 上电 ADC */
+    a->CR2 |= ADC_CR2_ADON;
+    /* tSTAB: 上电稳定时间 (~10µs) */
     for (volatile int i = 0; i < 1000; i++) {}
-    /* Calibrate */
-    a->CR2 |= 0x04;  /* CAL */
-    while (a->CR2 & 0x04) {}
+
+    /* CAL: 校准 ADC */
+    a->CR2 |= ADC_CR2_CAL;
+    while (a->CR2 & ADC_CR2_CAL) {}  /* 等待校准完成 */
     self->_init = 1;
 }
 
@@ -24,16 +30,21 @@ uint16_t adc_read(AdcPort *self, uint8_t channel)
 {
     ADC_Type *a = (ADC_Type *)self->adc;
 
-    /* Set channel in regular sequence */
+    /* 通道范围检查: STM32F103C8T6 有 10 个外部通道 + 内部通道 */
+    if (channel > 17) return 0xFFFF;
+
+    /* 设置规则序列通道 */
     a->SQR3 = channel & 0x1F;
-    /* Set sample time (55.5 cycles for channel) */
+
+    /* 配置采样时间: 55.5 cycles (默认, 适合大多数场景) */
     if (channel < 10) {
         uint32_t shift = channel * 3;
-        a->SMPR2 = (a->SMPR2 & ~(0x7UL << shift)) | (0x5UL << shift);
+        a->SMPR2 = (a->SMPR2 & ~(0x7UL << shift))
+                 | (ADC_SMPR_SMP_55_5 << shift);
     }
 
-    /* Start conversion */
-    a->CR2 |= 0x01;  /* ADON */
-    while (!(a->SR & 0x02)) {}  /* Wait EOC */
+    /* ADON: 启动转换 (第二次写 ADON 在已上电时启动转换) */
+    a->CR2 |= ADC_CR2_ADON;
+    while (!(a->SR & ADC_SR_EOC)) {}  /* 等待转换完成 */
     return (uint16_t)(a->DR & 0xFFFF);
 }

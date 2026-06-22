@@ -33,8 +33,14 @@ void vApplicationStackOverflowHook(TaskHandle_t xTask, char *pcTaskName)
 
     /* 在开发阶段：断言失败，立即停止 */
     /* 在发布阶段：可记录错误，软复位 MCU */
-    volatile uint32_t *scb_reset = (volatile uint32_t *)0xE000ED0C;
-    *scb_reset = (0x5FA << 16) | (1 << 2); /* SCB AIRCR: 系统复位 */
+
+    /* SCB AIRCR: 系统复位 (Application Interrupt and Reset Control Register)
+       VECTKEY = 0x05FA (写保护密钥, 高16位)
+       SYSRESETREQ (bit 2) = 请求系统复位 */
+    #define AIRCR_ADDR            ((volatile uint32_t *)0xE000ED0CUL)
+    #define AIRCR_VECTKEY         (0x05FAUL << 16)
+    #define AIRCR_SYSRESETREQ     (1UL << 2)
+    *AIRCR_ADDR = AIRCR_VECTKEY | AIRCR_SYSRESETREQ;
     while (1) {
         __asm__ volatile("nop");
     }
