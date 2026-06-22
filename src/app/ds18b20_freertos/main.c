@@ -28,11 +28,13 @@
  * ═══════════════════════════════════════════════════════════════ */
 #define SENSOR_DS18B20  1
 #define SENSOR_DHT11    2
+#define SENSOR_LIGHT    3
 #define SENSOR_TYPE     SENSOR_DS18B20   /* <── 改这行切换传感器! */
 
 #include "onewire.h"
 #include "ds18b20.h"
 #include "dht11.h"
+#include "light_sensor.h"
 
 /* ── 引脚 ────────────────────────────────────────────────── */
 #define SENSOR_PORT   GPIOA
@@ -56,6 +58,7 @@ static Sensor       *sensor;          /* ← 多态指针! 不关心具体类型
 static OneWireBus    ow_bus;          /* DS18B20 复用 */
 static DS18B20       ds18b20_obj;     /* DS18B20 实例 */
 static DHT11         dht11_obj;       /* DHT11 实例 */
+static LightSensor   light_obj;       /* M7 光敏实例 */
 static UartPort      uart;
 static GpioPin       led;
 static CLI           cli;
@@ -274,6 +277,12 @@ static void task_sensor(void *params)
 #elif SENSOR_TYPE == SENSOR_DHT11
     sensor = dht11_create(&dht11_obj, SENSOR_PORT, SENSOR_PIN);
     vTaskDelay(pdMS_TO_TICKS(1000));  /* DHT11 上电等待 1s */
+#elif SENSOR_TYPE == SENSOR_LIGHT
+    sensor = light_sensor_create(&light_obj,
+                ADC1, 3,         /* PA3 = ADC1_IN3 模拟量 */
+                GPIOB, GPIO_PIN_11);  /* PB11 = DO 数字阈值 */
+    rcc_enable_gpio('B');        /* 使能 GPIOB 时钟 */
+    rcc_enable_adc(1);           /* 使能 ADC1 时钟 */
 #endif
 
     /* ── 检查传感器是否就绪 ──────────────────────────────── */
