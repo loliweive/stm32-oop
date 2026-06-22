@@ -1,110 +1,207 @@
 # stm32-oop
 
-**面向对象的 C 语言嵌入式微框架** | STM32F103C8T6 (Blue Pill)
+**面向对象的 C 语言嵌入式微框架** — STM32F103C8T6 (Blue Pill)
 
-一套可复用、可测试、可移植的嵌入式软件基础，融合 OOP in C + TDD + 依赖注入。
+可复用 · 可测试 (TDD) · OOP in C (vtable) · 依赖注入 · FreeRTOS · CLI · OTA · OLED
+
+---
 
 ## 快速开始
 
 ```bash
-# 1. 运行所有 host 端单元测试
-cmake -B build/test -DBUILD_MODE=host
-cmake --build build/test
+git clone --recurse-submodules https://github.com/loliweive/stm32-oop.git
+cd stm32-oop
+
+# 1. 运行所有 host 端单元测试 (8 suites, 60+ assertions)
+cmake -B build/test -DBUILD_MODE=host && cmake --build build/test
 cd build/test && ctest --output-on-failure
 
-# 2. 编译 STM32 裸机固件 (Blinky, 608 bytes)
-cmake -B build/target -DBUILD_MODE=stm32f103
-cmake --build build/target
+# 2. 交叉编译裸机固件 (ds18b20 reader, ~7KB)
+cmake -B build/target -DBUILD_MODE=stm32f103 && cmake --build build/target
 
-# 3. 编译 FreeRTOS 多任务固件 (LED + UART 回显, ~12KB)
-git submodule update --init  # 首次需要
-cmake -B build/freertos -DBUILD_MODE=freertos
-cmake --build build/freertos
+# 3. 交叉编译 FreeRTOS + CLI + 传感器 + OLED + OTA (~26KB)
+cmake -B build/freertos -DBUILD_MODE=freertos && cmake --build build/freertos
 
-# 4. 烧录 (需要 ST-Link)
+# 4. 交叉编译 OTA Bootloader (~5.4KB)
+cmake -B build/bootloader -DBUILD_MODE=bootloader && cmake --build build/bootloader
+
+# 5. 烧录
 openocd -f interface/stlink.cfg -f target/stm32f1x.cfg \
-  -c "program build/target/stm32-oop.elf verify reset exit"
+  -c "program build/freertos/stm32-oop.elf verify reset exit"
 ```
+
+---
+
+## 硬件接线 (当前 IO 分配)
+
+```
+STM32F103C8T6 (Blue Pill)
+       ┌──────────────────────────┐
+ M2/10 │ PA1   DS18B20/DHT11 数据  │ OneWire / 单总线
+ M7    │ PA3   光敏 AO (模拟)      │ ADC1_IN3
+ M12   │ PA5   SPI1_SCK           │ Flash 时钟
+ M12   │ PA6   SPI1_MISO          │ Flash 主入从出
+ M12   │ PA7   SPI1_MOSI          │ Flash 主出从入
+ 串口  │ PA9   USART1_TX           │ CLI 输出 (115200)
+ 串口  │ PA10  USART1_RX           │ CLI 输入
+  SWD  │ PA13  SWDIO               │ 调试 (保留)
+  SWD  │ PA14  SWCLK               │ 调试 (保留)
+       ├──────────────────────────┤
+ M1    │ PB6   I2C1_SCL            │ OLED 时钟
+ M1    │ PB7   I2C1_SDA            │ OLED 数据
+ M12   │ PB9   SPI_CS              │ Flash 片选
+ M7    │ PB11  光敏 DO (数字)       │ 阈值输出
+ 按键  │ PB14  上拉按键 (按下=LOW)   │
+       ├──────────────────────────┤
+ LED   │ PC13  板载 LED (低电平亮) │
+       └──────────────────────────┘
+
+总计: 13/48 引脚已用 | 5 个外设 (USART1 SPI1 I2C1 ADC1 SWD)
+```
+
+### 模块列表
+
+| 编号 | 模块 | 协议 | 引脚 |
+|:----:|------|------|------|
+| M1 | SSD1306 OLED 128×64 | I2C | PB6, PB7 |
+| M2 | DS18B20 温度 (-55~125°C) | OneWire | PA1 |
+| M7 | 光敏电阻 | ADC + GPIO | PA3, PB11 |
+| M10 | DHT11 温湿度 (0~50°C + RH) | 单总线 | PA1 |
+| M12 | W25Qxx SPI Flash (8MB) | SPI | PA5-7, PB9 |
+
+> M2 和 M10 共用 PA1，编译宏 `SENSOR_TYPE` 切换，物理可插拔替换。
+
+---
 
 ## 项目结构
 
-```
-src/core/      运行时：Object · RingBuffer · List · StateMachine
-src/hal/       硬件抽象：GPIO · UART · Timer · I2C · SPI · ADC · RCC
-src/utils/     工具：Assert · Log · Delay
-src/app/       实验：blinky · breathing · uart_echo
-test/          单元测试：7 套件 · Unity · Mock (vtable 注入)
-lib/           CMSIS + STM32F103 寄存器定义
-```
-
-## 核心设计
-
-| 模式 | 说明 |
-|------|------|
-| **vtable 派发** | C 语言模拟虚函数 — GPIO/Timer 等外设通过虚函数表实现多态 |
-| **依赖注入** | UART 通过 `SerialInterface` 注入 mock，host 端可直接测试 |
-| **双模式 CMake** | `-DBUILD_MODE=host` 运行 x86 测试，`=stm32f103` 交叉编译 |
-| **零动态分配** | 所有对象静态分配，适配 20KB SRAM |
-| **FreeRTOS 就绪** | 调度器接口已定义，裸机协作式 → RTOS 抢占式一键切换 |
-
-## OOP in C 示例
-
-```c
-// "类" → 虚函数表 + 内联派发
-GpioPin led;
-GpioPin_ctor(&led, GPIOC, GPIO_PIN_13);  // 构造
-gpio_set_mode(&led, GPIO_MODE_OUT_PP);    // 设置模式
-gpio_set(&led, 1);                        // 点亮 LED
-
-// 测试时注入 mock vtable → 零硬件依赖
-```
-
-## 测试覆盖
-
-| 测试套件 | 内容 |
-|---------|------|
-| `test_ring_buffer` | 11 用例 — 空/满/绕回/批量/压力 |
-| `test_list` | 7 用例 — 增删/遍历/容器宏 |
-| `test_state_machine` | 7 用例 — 转移/守卫/层次/跳转 |
-| `test_assert` | 4 用例 — 处理器/NDEBUG |
-| `test_gpio` | 6 用例 — vtable 派发/mock 记录 |
-| `test_uart` | 7 用例 — 依赖注入/收发/缓冲 |
-| `test_timer` | 5 用例 — 启停/PWM/周期 |
-
-## 环境要求
-
-- **macOS**: `brew install arm-none-eabi-gcc openocd cmake`
-- **Linux**: `apt install gcc-arm-none-eabi openocd cmake`
-- **Windows**: 推荐 WSL2 + 同上 Linux 安装
-
-## 实验列表
-
-| 实验 | 文件 | 说明 |
-|------|------|------|
-| LED 闪烁 | `src/app/blinky/main.c` | 板载 PC13，1Hz |
-| 呼吸灯 | `src/app/blinky/breathing.c` | 软件 PWM 渐变 |
-| UART 回显 | `src/app/uart_echo/main.c` | USART1, 115200-8N1 |
-| **FreeRTOS 多任务** | `src/app/freertos_demo/main.c` | LED (1Hz) + UART 回显 (115200) + `!` 打印任务列表 |
-
-## FreeRTOS 集成
-
-```
-cmake -B build/freertos -DBUILD_MODE=freertos && cmake --build build/freertos
+```text
+stm32-oop/
+├── src/
+│   ├── core/                运行时: Object, RingBuffer, List, StateMachine
+│   ├── hal/                 硬件抽象: GPIO, UART, I2C, SPI, Timer, ADC, RCC
+│   ├── sensor/              传感器: Sensor(interface), DS18B20, DHT11, Light
+│   ├── display/             OLED: SSD1306 128×64 I2C
+│   ├── storage/             存储: SPI Flash W25Qxx
+│   ├── cli/                 命令行: 行编辑, 历史, Tab 补全, ANSI 终端
+│   ├── ota/                 固件升级: 协议, Flash 操作, 传输层, 客户端
+│   ├── utils/               工具: Assert, Log, Delay
+│   ├── startup/             启动: 汇编向量表, SystemInit
+│   ├── app/                 实验:
+│   │   ├── ds18b20_freertos/  FreeRTOS + CLI + Sensor + OTA + OLED (当前)
+│   │   ├── ds18b20_reader/    裸机温度读取
+│   │   ├── blinky/            LED 闪烁
+│   │   └── uart_echo/         串口回显
+│   └── bootloader/          OTA 启动加载器
+├── test/                    8 个测试套件 + Unity + Mock
+├── lib/
+│   ├── FreeRTOS/            FreeRTOS Kernel V11 (git submodule)
+│   ├── cmsis/               CMSIS Cortex-M3 头文件
+│   └── stm32f1/             STM32F103 寄存器定义
+├── tools/                   ota_sender.py (上位机 OTA 工具)
+├── docs/                    文档 + 流程图
+│   ├── io-map.md            IO 引脚分配图
+│   ├── architecture.md      系统架构
+│   ├── sensor-oop.md        Sensor OOP 类继承图
+│   ├── cli-flow.md          CLI 命令处理流程
+│   ├── freertos-tasks.md    FreeRTOS 任务架构
+│   └── ota-flow.md          OTA 更新流程
+├── linker/                  链接脚本
+├── cmake/                   工具链文件
+└── scripts/                 flash.sh, gdb.sh, run_tests.sh
 ```
 
-- FreeRTOS Kernel V11 (git submodule)
-- ARM_CM3 GCC port + heap_4 (6KB heap)
-- LED task (优先级 1, 512B stack) + UART echo task (优先级 2, 1KB stack)
-- `delay_ms()` 自动切换为 `vTaskDelay()` (阻塞延时, 让出 CPU)
-- SysTick 由 FreeRTOS 管理, 与裸机 `delay.c` 通过 `#ifdef USE_FREERTOS` 条件编译
+---
 
 ## 构建模式
 
-| 模式 | 命令 | 输出 |
-|------|------|------|
-| Host 测试 | `-DBUILD_MODE=host` | x86 可执行文件, ctest |
-| 裸机固件 | `-DBUILD_MODE=stm32f103` | 608B Flash |
-| FreeRTOS | `-DBUILD_MODE=freertos` | ~12KB Flash, ~7KB SRAM |
+| 模式 | 命令 | Flash | SRAM | 说明 |
+|------|------|:-----|:-----|------|
+| **host** | `-DBUILD_MODE=host` | — | — | x86 测试, ctest |
+| **stm32f103** | `-DBUILD_MODE=stm32f103` | ~7KB | ~0.5KB | 裸机 DS18B20 reader |
+| **freertos** | `-DBUILD_MODE=freertos` | ~26KB | ~10KB | CLI + Sensor + OLED + OTA |
+| **bootloader** | `-DBUILD_MODE=bootloader` | ~5.4KB | ~1.8KB | OTA 启动加载器 |
+
+---
+
+## 核心设计模式
+
+### OOP in C: vtable 多态
+
+```c
+// HAL 层: GPIO, Timer
+typedef struct { const GpioVtable *vtable; ... } GpioPin;
+gpio_set(&led, 1);  // → self->vtable->set(self, 1)  ← 多态派发
+
+// Sensor 层: DS18B20, DHT11, Light
+Sensor *s = ds18b20_create(&obj, &bus);
+sensor_read(s, &temp, &hum);   // ← 一行代码, 三种传感器行为!
+sensor_name(s);                // → "DS18B20" / "DHT11" / "Light(M7)"
+```
+
+### 依赖注入 (UART)
+
+```c
+// 运行时: io=NULL → 真实 USART 寄存器
+// 测试时: io=&mock → 内存队列, host 端可测试
+typedef struct { SerialInterface *io; ... } UartPort;
+```
+
+---
+
+## CLI 命令
+
+```
+> help
+  help          Show this help
+  temp          Read sensor once
+  temp-stream   Start continuous output
+  temp-stop     Stop continuous output
+  led           Control LED: on|off|toggle
+  btn           Read button state (PB14)
+  info          Show system information
+  uptime        Show system uptime
+  reset         Software reset MCU
+  ota-start     Start OTA firmware update
+  ota-status    Show OTA update status
+  flash-id      Read SPI Flash JEDEC ID
+```
+
+### OTA 更新
+
+```bash
+# CLI 侧:
+> ota-start
+CLI suspended — send firmware now.
+
+# PC 侧:
+python3 tools/ota_sender.py firmware.bin --port /dev/tty.usbserial-*
+```
+
+---
+
+## 测试
+
+| 套件 | 用例 | 类型 |
+|------|:----:|------|
+| test_ring_buffer | 11 | 核心数据结构 |
+| test_list | 7 | 侵入式链表 |
+| test_state_machine | 7 | 状态机引擎 |
+| test_assert | 4 | 断言系统 |
+| test_gpio | 6 | vtable mock |
+| test_uart | 7 | 依赖注入 |
+| test_timer | 5 | Timer mock |
+| test_ota_protocol | 12 | CRC16 + 帧编解码 |
+| **合计** | **60+** | — |
+
+---
+
+## 要求
+
+- **arm-none-eabi-gcc** (ARM GCC 14.2+)
+- **CMake** 3.20+
+- **OpenOCD** + ST-Link (烧录/调试)
+- **pyserial** (OTA 上位机工具)
 
 ## License
 
