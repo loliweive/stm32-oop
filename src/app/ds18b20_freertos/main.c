@@ -37,6 +37,7 @@
 #include "light_sensor.h"
 #include "ssd1306.h"
 #include "i2c.h"
+#include "spi_flash.h"
 
 /* ── OLED 引脚 ──────────────────────────────────────────── */
 #define OLED_I2C       I2C1
@@ -74,6 +75,7 @@ static GpioPin       led;
 static GpioPin       btn;            /* PB14 上拉按键 */
 static CLI           cli;
 static SSD1306       oled;
+static SpiFlash      spiflash;
 static bool          stream_mode = false;
 
 /* ── UART 写回调 (给 CLI) ──────────────────────────────────────── */
@@ -255,6 +257,19 @@ static void cmd_ota_status(CLI *c, int argc, char **argv)
     }
 }
 
+static void cmd_flash_id(CLI *c, int argc, char **argv)
+{
+    (void)argc; (void)argv;
+    const SpiFlashInfo *info = spi_flash_get_info(&spiflash);
+    cli_printf(c, "SPI Flash: %s\r\n", info->name);
+    cli_printf(c, "  JEDEC ID: 0x%06lX\r\n", (unsigned long)info->jedec_id);
+    cli_printf(c, "  Capacity: %lu KB (%lu MB)\r\n",
+               (unsigned long)(info->capacity / 1024),
+               (unsigned long)(info->capacity / 1048576));
+    cli_printf(c, "  Page: %u B  Sector: %u KB  Block: %u KB\r\n",
+               info->page_size, info->sector_size / 1024, info->block_size / 1024);
+}
+
 static void cmd_reset(CLI *c, int argc, char **argv)
 {
     (void)c; (void)argc; (void)argv;
@@ -277,6 +292,7 @@ static const CLICommand commands[] = {
     { "temp-stop",   cmd_temp_stop,   "Stop continuous temp output" },
     { "led",         cmd_led,         "Control LED: on|off|toggle" },
     { "btn",         cmd_btn,         "Read button state (PB14)" },
+    { "flash-id",    cmd_flash_id,    "Read SPI Flash JEDEC ID" },
     { "info",        cmd_info,        "Show system information" },
     { "uptime",      cmd_uptime,      "Show system uptime" },
     { "reset",       cmd_reset,       "Software reset MCU" },
@@ -437,6 +453,19 @@ int main(void)
     }
     ssd1306_init(&oled, OLED_I2C, OLED_ADDR);
     ssd1306_show_sensor(&oled, "STM32-oop", "OLED Ready", "PB6/PB7 I2C");
+
+    /* 初始化 SPI Flash (PA5=SCK, PA6=MISO, PA7=MOSI, PB9=CS) */
+    rcc_enable_spi(1);
+    {
+        GpioPin sck, miso, mosi;
+        GpioPin_ctor(&sck,  GPIOA, GPIO_PIN_5);
+        gpio_set_mode(&sck,  GPIO_CNF_ALT_PP | GPIO_MODE_OUT_50MHZ);
+        GpioPin_ctor(&miso, GPIOA, GPIO_PIN_6);
+        gpio_set_mode(&miso, GPIO_CNF_FLOAT | GPIO_MODE_IN);
+        GpioPin_ctor(&mosi, GPIOA, GPIO_PIN_7);
+        gpio_set_mode(&mosi, GPIO_CNF_ALT_PP | GPIO_MODE_OUT_50MHZ);
+    }
+    spi_flash_init(&spiflash, SPI1, GPIOB, GPIO_PIN_9);
 
     /* 创建温度数据队列 */
     temp_queue = xQueueCreate(1, sizeof(TempReading));

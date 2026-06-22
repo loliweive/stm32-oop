@@ -113,6 +113,7 @@ elseif(BUILD_MODE STREQUAL "freertos")
         "${STM32_SRC_DIR}/cli"
         "${STM32_SRC_DIR}/ota"
         "${STM32_SRC_DIR}/display"
+        "${STM32_SRC_DIR}/storage"
     )
 
     # FreeRTOS kernel sources (Cortex-M3/GCC port + heap_4)
@@ -156,6 +157,7 @@ elseif(BUILD_MODE STREQUAL "freertos")
         ${STM32_SRC_DIR}/ota/ota_client.c
         ${STM32_SRC_DIR}/ota/ota_transport_shared.c
         ${STM32_SRC_DIR}/display/ssd1306.c
+        ${STM32_SRC_DIR}/storage/spi_flash.c
         ${FREERTOS_SRC}
     )
 
