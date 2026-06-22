@@ -127,6 +127,17 @@ void _unity_assert_str_equal(const char *expected, const char *actual,
     }
 }
 
+void _unity_assert_not_equal_u32(uint32_t expected, uint32_t actual,
+    const char *file, int line, const char *msg)
+{
+    if (expected == actual) {
+        printf("  Expected NOT %u, got %u\n", expected, actual);
+        fail(file, line, msg);
+    } else {
+        pass();
+    }
+}
+
 void _unity_assert_null(const void *ptr,
     const char *file, int line, const char *msg)
 {

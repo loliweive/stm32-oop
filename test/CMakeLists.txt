@@ -30,6 +30,7 @@ set(TEST_INCLUDES
     ${ROOT_DIR}/src/core
     ${ROOT_DIR}/src/utils
     ${ROOT_DIR}/src/hal
+    ${ROOT_DIR}/src/ota
     ${ROOT_DIR}/lib/stm32f1
     ${ROOT_DIR}/lib/cmsis
 )
@@ -109,4 +110,14 @@ add_host_test(test_timer
     ${TIMER_SRC}
     ${MOCK_TIMER_SRC}
     ${TEST_DIR}/test_timer.c
+)
+
+# OTA protocol test (pure logic, no hardware needed)
+set(OTA_SRC
+    ${ROOT_DIR}/src/ota/ota_protocol.c
+)
+
+add_host_test(test_ota_protocol
+    ${OTA_SRC}
+    ${TEST_DIR}/test_ota_protocol.c
 )

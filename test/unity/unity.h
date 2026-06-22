@@ -50,6 +50,8 @@ void _unity_assert_false(bool actual,
     const char *file, int line, const char *msg);
 void _unity_assert_str_equal(const char *expected, const char *actual,
     const char *file, int line, const char *msg);
+void _unity_assert_not_equal_u32(uint32_t expected, uint32_t actual,
+    const char *file, int line, const char *msg);
 void _unity_assert_null(const void *ptr,
     const char *file, int line, const char *msg);
 void _unity_assert_not_null(const void *ptr,
@@ -61,6 +63,8 @@ void _unity_assert_not_null(const void *ptr,
     _unity_assert_equal_u32((expected), (actual), __FILE__, __LINE__, NULL)
 #define TEST_ASSERT_EQUAL_U8(expected, actual) \
     _unity_assert_equal_u8((expected), (actual), __FILE__, __LINE__, NULL)
+#define TEST_ASSERT_NOT_EQUAL(expected, actual) \
+    _unity_assert_not_equal_u32((expected), (actual), __FILE__, __LINE__, NULL)
 #define TEST_ASSERT_EQUAL_PTR(expected, actual) \
     _unity_assert_equal_ptr((expected), (actual), __FILE__, __LINE__, NULL)
 #define TEST_ASSERT_EQUAL_SIZE(expected, actual) \
