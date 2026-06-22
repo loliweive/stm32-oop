@@ -32,6 +32,7 @@
 
 #include "uart.h"
 #include "stm32f103xb.h"
+#include "rcc.h"
 
 /**
  * @brief 构造函数 — 初始化 UartPort
@@ -72,12 +73,13 @@ void uart_init(UartPort *self)
     /* 守卫: baudrate=0 会导致除零异常 */
     if (self->baudrate == 0) return;
 
-    /* 计算 PCLK: USART1 在 APB2 (72MHz)，USART2/3 在 APB1 (36MHz) */
-    uint32_t pclk = (u == USART1) ? 72000000 : 36000000;
+    /* 从 RCC 读取实际 APB 时钟 (而非硬编码 72MHz/36MHz)
+       这样即使 HSE 晶振失效回退到 HSI 8MHz, 波特率也正确 */
+    RccConfig rcc_cfg;
+    rcc_get_config(&rcc_cfg);
+    uint32_t pclk = (u == USART1) ? rcc_cfg.pclk2_hz : rcc_cfg.pclk1_hz;
 
-    /* BRR = PCLK / baud (因为 BRR 编码的是 USARTDIV * 16 = PCLK / baud)
-       参考手册公式: USARTDIV = PCLK / (16 × baud)
-       但 BRR 寄存器存储 USARTDIV * 16 = PCLK / baud */
+    /* BRR = PCLK / baud (BRR 编码 USARTDIV * 16) */
     u->BRR = (pclk + self->baudrate / 2) / self->baudrate;
 
     /* 使能 USART + 发送 + 接收 */

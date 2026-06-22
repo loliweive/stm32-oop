@@ -168,7 +168,9 @@ static void cmd_info(CLI *c, int argc, char **argv)
     (void)argc; (void)argv;
     cli_printf(c, "\r\n");
     cli_printf(c, "  System:    STM32F103C8T6 (Blue Pill)\r\n");
-    cli_printf(c, "  Core:      Cortex-M3 @ 72MHz\r\n");
+    RccConfig rcc; rcc_get_config(&rcc);
+    cli_printf(c, "  Core:      Cortex-M3 @ %luMHz\r\n",
+               (unsigned long)(rcc.sysclk_hz / 1000000));
     cli_printf(c, "  Flash:     64KB\r\n");
     cli_printf(c, "  SRAM:      20KB\r\n");
     cli_printf(c, "  RTOS:      FreeRTOS V11\r\n");
