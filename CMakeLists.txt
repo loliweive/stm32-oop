@@ -40,6 +40,7 @@ elseif(BUILD_MODE STREQUAL "stm32f103")
         "${STM32_SRC_DIR}/utils"
         "${STM32_SRC_DIR}/app/ds18b20_reader"
         "${STM32_SRC_DIR}/sensor"
+        "${STM32_SRC_DIR}/display"
     )
 
     add_executable(${PROJECT_NAME}
@@ -157,6 +158,7 @@ elseif(BUILD_MODE STREQUAL "freertos")
         ${STM32_SRC_DIR}/ota/ota_client.c
         ${STM32_SRC_DIR}/ota/ota_transport_shared.c
         ${STM32_SRC_DIR}/display/ssd1306.c
+        ${STM32_SRC_DIR}/display/ascii_font.c
         ${STM32_SRC_DIR}/storage/spi_flash.c
         ${FREERTOS_SRC}
     )

@@ -69,25 +69,22 @@ void ssd1306_init(SSD1306 *oled, void *i2c, uint8_t addr)
     oled->addr = addr;
     memset(oled->framebuf, 0, sizeof(oled->framebuf));
 
-    /* 初始化命令序列 */
+    /* Init sequence (verified against DShanMCU-F103 reference OLED driver) */
     uint8_t init_cmds[] = {
         0xAE,        /* Display OFF */
-        0xD5, 0x80,  /* Clock div */
+        0x20, 0x02,  /* PAGE_ADDR_MODE (verified — required for this OLED) */
         0xA8, 0x3F,  /* MUX = 64 */
         0xD3, 0x00,  /* Display offset */
-        0x40,        /* Start line */
-        0x8D, 0x14,  /* Charge pump */
-        0x20, 0x00,  /* Horizontal addressing */
+        0x40,        /* Start line = 0 */
         0xA1,        /* Segment remap */
-        0xC8,        /* COM scan direction */
+        0xC8,        /* COM scan remap */
         0xDA, 0x12,  /* COM pins */
-        0x81, 0xCF,  /* Contrast */
-        0xD9, 0xF1,  /* Precharge */
-        0xDB, 0x40,  /* VCOMH */
-        0xA4,        /* Display ON (resume) */
-        0xA6,        /* Normal display (not inverted) */
-        0x2E,        /* Deactivate scroll */
-        0xAF,        /* Display ON */
+        0x81, 0xFF,  /* Contrast = max */
+        0xA4,        /* Normal display */
+        0xA6,        /* Not inverted */
+        0xD5, 0x80,  /* Clock div */
+        0x8D, 0x14,  /* Charge pump enable */
+        0xAF,        /* DISPLAY ON */
     };
     for (size_t i = 0; i < sizeof(init_cmds); i++) {
         _send_cmd(oled, init_cmds[i]);
@@ -97,15 +94,28 @@ void ssd1306_init(SSD1306 *oled, void *i2c, uint8_t addr)
 void ssd1306_clear(SSD1306 *oled)
 {
     memset(oled->framebuf, 0, sizeof(oled->framebuf));
+    /* Also clear OLED GRAM immediately */
+    for (int p = 0; p < 8; p++) {
+        _send_cmd(oled, 0xB0 + p);       /* Set page */
+        _send_cmd(oled, 0x00);            /* Column low */
+        _send_cmd(oled, 0x10);            /* Column high (=0) */
+        uint8_t zero[129]; zero[0] = 0x40;
+        for (int i = 1; i < 129; i++) zero[i] = 0;
+        i2c_write_raw(oled->i2c, oled->addr, zero, 129);
+    }
 }
 
 void ssd1306_flush(SSD1306 *oled)
 {
-    /* 设置写入区域: 全部页 */
-    _send_cmd(oled, 0x21); _send_cmd(oled, 0); _send_cmd(oled, 127); /* 列 0-127 */
-    _send_cmd(oled, 0x22); _send_cmd(oled, 0); _send_cmd(oled, 7);   /* 页 0-7 */
-
-    _send_data(oled, oled->framebuf, sizeof(oled->framebuf));
+    /* PAGE mode: write each page separately */
+    for (int p = 0; p < 8; p++) {
+        _send_cmd(oled, 0xB0 + p);
+        _send_cmd(oled, 0x00);
+        _send_cmd(oled, 0x10);
+        uint8_t buf[129]; buf[0] = 0x40;
+        for (int i = 0; i < 128; i++) buf[1+i] = oled->framebuf[p * 128 + i];
+        i2c_write_raw(oled->i2c, oled->addr, buf, 129);
+    }
 }
 
 /* ── 绘图 ──────────────────────────────────────────────── */
