@@ -108,6 +108,8 @@ elseif(BUILD_MODE STREQUAL "freertos")
         "${STM32_SRC_DIR}/hal"
         "${STM32_SRC_DIR}/utils"
         "${STM32_SRC_DIR}/app/freertos_demo"
+        "${STM32_SRC_DIR}/app/ds18b20_freertos"
+        "${STM32_SRC_DIR}/sensor"
     )
 
     # FreeRTOS kernel sources (Cortex-M3/GCC port + heap_4)
@@ -138,9 +140,11 @@ elseif(BUILD_MODE STREQUAL "freertos")
         ${STM32_SRC_DIR}/hal/spi.c
         ${STM32_SRC_DIR}/hal/adc.c
         ${STM32_SRC_DIR}/hal/nvic.c
-        ${STM32_SRC_DIR}/app/freertos_demo/main.c
+        ${STM32_SRC_DIR}/app/ds18b20_freertos/main.c
         ${STM32_SRC_DIR}/app/freertos_demo/freertos_scheduler.c
         ${STM32_SRC_DIR}/app/freertos_demo/freertos_hooks.c
+        ${STM32_SRC_DIR}/sensor/onewire.c
+        ${STM32_SRC_DIR}/sensor/ds18b20.c
         ${FREERTOS_SRC}
     )
 
