@@ -1,0 +1,53 @@
+{
+    "version": "2.0.0",
+    "tasks": [
+        {
+            "label": "Build FreeRTOS",
+            "type": "shell",
+            "command": "cmake --build ${workspaceRoot}/build/freertos",
+            "group": "build",
+            "problemMatcher": ["$gcc"]
+        },
+        {
+            "label": "Build Bare-Metal",
+            "type": "shell",
+            "command": "cmake --build ${workspaceRoot}/build/target",
+            "group": "build",
+            "problemMatcher": ["$gcc"]
+        },
+        {
+            "label": "Build Bootloader",
+            "type": "shell",
+            "command": "cmake --build ${workspaceRoot}/build/bootloader",
+            "group": "build",
+            "problemMatcher": ["$gcc"]
+        },
+        {
+            "label": "Build All",
+            "type": "shell",
+            "command": "cmake --build ${workspaceRoot}/build/freertos && cmake --build ${workspaceRoot}/build/target && cmake --build ${workspaceRoot}/build/bootloader",
+            "group": "build",
+            "problemMatcher": ["$gcc"]
+        },
+        {
+            "label": "Configure FreeRTOS",
+            "type": "shell",
+            "command": "cmake -B ${workspaceRoot}/build/freertos -DBUILD_MODE=freertos -DCMAKE_TOOLCHAIN_FILE=${workspaceRoot}/cmake/toolchain-arm-none-eabi.cmake",
+            "problemMatcher": []
+        },
+        {
+            "label": "Run Tests",
+            "type": "shell",
+            "command": "cmake -B ${workspaceRoot}/build/test -DBUILD_MODE=host && cmake --build ${workspaceRoot}/build/test && cd ${workspaceRoot}/build/test && ctest --output-on-failure",
+            "group": "test",
+            "problemMatcher": []
+        },
+        {
+            "label": "Flash (OpenOCD)",
+            "type": "shell",
+            "command": "openocd -f interface/stlink.cfg -f target/stm32f1x.cfg -c \"program ${workspaceRoot}/build/freertos/stm32-oop.elf verify reset exit\"",
+            "group": "none",
+            "problemMatcher": []
+        }
+    ]
+}

@@ -1,0 +1,72 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "Flash & Debug (FreeRTOS)",
+            "type": "cortex-debug",
+            "request": "launch",
+            "servertype": "openocd",
+            "cwd": "${workspaceRoot}",
+            "executable": "${workspaceRoot}/build/freertos/stm32-oop.elf",
+            "configFiles": [
+                "interface/stlink.cfg",
+                "target/stm32f1x.cfg"
+            ],
+            "openOCDLaunchCommands": [
+                "init",
+                "reset init"
+            ],
+            "svdFile": "STM32F103.svd",
+            "preLaunchTask": "Build FreeRTOS",
+            "runToEntryPoint": "main",
+            "showDevDebugOutput": "parsed",
+            "liveWatch": {
+                "enabled": true,
+                "samples": 100
+            }
+        },
+        {
+            "name": "Flash & Debug (Bare-Metal)",
+            "type": "cortex-debug",
+            "request": "launch",
+            "servertype": "openocd",
+            "cwd": "${workspaceRoot}",
+            "executable": "${workspaceRoot}/build/target/stm32-oop.elf",
+            "configFiles": [
+                "interface/stlink.cfg",
+                "target/stm32f1x.cfg"
+            ],
+            "svdFile": "STM32F103.svd",
+            "preLaunchTask": "Build Bare-Metal",
+            "runToEntryPoint": "main"
+        },
+        {
+            "name": "Flash & Debug (Bootloader)",
+            "type": "cortex-debug",
+            "request": "launch",
+            "servertype": "openocd",
+            "cwd": "${workspaceRoot}",
+            "executable": "${workspaceRoot}/build/bootloader/stm32-oop.elf",
+            "configFiles": [
+                "interface/stlink.cfg",
+                "target/stm32f1x.cfg"
+            ],
+            "svdFile": "STM32F103.svd",
+            "preLaunchTask": "Build Bootloader",
+            "runToEntryPoint": "main"
+        },
+        {
+            "name": "Attach to Running",
+            "type": "cortex-debug",
+            "request": "attach",
+            "servertype": "openocd",
+            "cwd": "${workspaceRoot}",
+            "executable": "${workspaceRoot}/build/freertos/stm32-oop.elf",
+            "configFiles": [
+                "interface/stlink.cfg",
+                "target/stm32f1x.cfg"
+            ],
+            "svdFile": "STM32F103.svd"
+        }
+    ]
+}

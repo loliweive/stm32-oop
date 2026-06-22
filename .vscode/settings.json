@@ -1,0 +1,41 @@
+{
+    "cmake.configureOnOpen": false,
+    "cmake.sourceDirectory": "${workspaceFolder}",
+    "cmake.buildDirectory": "${workspaceFolder}/build/${buildKit}",
+    "cmake.configureArgs": [
+        "-DBUILD_MODE=freertos"
+    ],
+    "C_Cpp.default.includePath": [
+        "${workspaceFolder}/lib/cmsis",
+        "${workspaceFolder}/lib/stm32f1",
+        "${workspaceFolder}/lib/FreeRTOS/include",
+        "${workspaceFolder}/lib/FreeRTOS/portable/GCC/ARM_CM3",
+        "${workspaceFolder}/src/core",
+        "${workspaceFolder}/src/hal",
+        "${workspaceFolder}/src/utils",
+        "${workspaceFolder}/src/sensor",
+        "${workspaceFolder}/src/display",
+        "${workspaceFolder}/src/storage",
+        "${workspaceFolder}/src/cli",
+        "${workspaceFolder}/src/ota",
+        "${workspaceFolder}/src/app/ds18b20_freertos",
+        "${workspaceFolder}/src/app/freertos_demo",
+        "${workspaceFolder}/test/unity",
+        "${workspaceFolder}/test/mocks"
+    ],
+    "C_Cpp.default.defines": [
+        "STM32F103xB",
+        "USE_FREERTOS"
+    ],
+    "C_Cpp.default.compilerPath": "/opt/homebrew/bin/arm-none-eabi-gcc",
+    "C_Cpp.default.intelliSenseMode": "gcc-arm",
+    "files.associations": {
+        "*.s": "arm",
+        "*.ld": "linker-script"
+    },
+    "editor.formatOnSave": true,
+    "[c]": {
+        "editor.defaultFormatter": "ms-vscode.cpptools",
+        "editor.tabSize": 4
+    }
+}
