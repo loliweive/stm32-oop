@@ -38,7 +38,7 @@ elseif(BUILD_MODE STREQUAL "stm32f103")
         "${STM32_SRC_DIR}/core"
         "${STM32_SRC_DIR}/hal"
         "${STM32_SRC_DIR}/utils"
-        "${STM32_SRC_DIR}/app/ds18b20_reader"
+        "${STM32_SRC_DIR}/app/oled_test"
         "${STM32_SRC_DIR}/sensor"
         "${STM32_SRC_DIR}/display"
     )
@@ -61,9 +61,8 @@ elseif(BUILD_MODE STREQUAL "stm32f103")
         ${STM32_SRC_DIR}/hal/spi.c
         ${STM32_SRC_DIR}/hal/adc.c
         ${STM32_SRC_DIR}/hal/nvic.c
-        ${STM32_SRC_DIR}/sensor/onewire.c
-        ${STM32_SRC_DIR}/sensor/ds18b20.c
-        ${STM32_SRC_DIR}/app/ds18b20_reader/main.c
+        ${STM32_SRC_DIR}/app/oled_test/main.c
+        ${STM32_SRC_DIR}/display/ascii_font.c
     )
 
     target_include_directories(${PROJECT_NAME} PRIVATE ${STM32_INCLUDES})
