@@ -61,6 +61,7 @@ static DHT11         dht11_obj;       /* DHT11 实例 */
 static LightSensor   light_obj;       /* M7 光敏实例 */
 static UartPort      uart;
 static GpioPin       led;
+static GpioPin       btn;            /* PB14 上拉按键 */
 static CLI           cli;
 static bool          stream_mode = false;
 
@@ -120,6 +121,15 @@ static void cmd_temp_stop(CLI *c, int argc, char **argv)
     cli_printf(c, "Temperature stream stopped.\r\n");
 }
 
+static void cmd_btn(CLI *c, int argc, char **argv)
+{
+    (void)argc; (void)argv;
+    uint8_t state = gpio_get(&btn);
+    cli_printf(c, "Button (PB14): %s (%s)\r\n",
+               state == 0 ? "PRESSED" : "released",
+               state == 0 ? "LOW — contact GND" : "HIGH — pull-up");
+}
+
 static void cmd_led(CLI *c, int argc, char **argv)
 {
     if (argc < 2) {
@@ -152,6 +162,7 @@ static void cmd_info(CLI *c, int argc, char **argv)
     cli_printf(c, "  Tick:      %lu Hz\r\n", (unsigned long)configTICK_RATE_HZ);
     cli_printf(c, "  Heap free: %lu bytes\r\n", (unsigned long)xPortGetFreeHeapSize());
     cli_printf(c, "  Sensor:    %s (PA1)\r\n", sensor_name(sensor));
+    cli_printf(c, "  Button:    PB14 (pull-up, press=LOW)\r\n");
     cli_printf(c, "\r\n");
 }
 
@@ -254,6 +265,7 @@ static const CLICommand commands[] = {
     { "temp-stream", cmd_temp_stream, "Start continuous temp output" },
     { "temp-stop",   cmd_temp_stop,   "Stop continuous temp output" },
     { "led",         cmd_led,         "Control LED: on|off|toggle" },
+    { "btn",         cmd_btn,         "Read button state (PB14)" },
     { "info",        cmd_info,        "Show system information" },
     { "uptime",      cmd_uptime,      "Show system uptime" },
     { "reset",       cmd_reset,       "Software reset MCU" },
@@ -372,6 +384,12 @@ int main(void)
     GpioPin_ctor(&led, GPIOC, GPIO_PIN_13);
     gpio_set_mode(&led, GPIO_MODE_OUT_PP);
     gpio_set(&led, 1);
+
+    /* 初始化按键 (PB14, 上拉 — 按下=低电平) */
+    rcc_enable_gpio('B');
+    GpioPin_ctor(&btn, GPIOB, GPIO_PIN_14);
+    gpio_set_mode(&btn, GPIO_CNF_PP | GPIO_MODE_IN);    /* 输入 + 内部上拉 */
+    gpio_set(&btn, 1);  /* 启用上拉 */
 
     /* 创建温度数据队列 */
     temp_queue = xQueueCreate(1, sizeof(TempReading));
