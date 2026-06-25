@@ -412,10 +412,15 @@ static void task_cli(void *params)
 
     while (1) {
         uint8_t byte;
-        if (uart_recv(&uart, &byte)) {
-            cli_feed(&cli, (char)byte);
+        /* 排空 UART RX — 避免 ESC 序列丢字节 */
+        for (int timeout = 2000; timeout > 0; timeout--) {
+            if (uart_recv(&uart, &byte)) {
+                cli_feed(&cli, (char)byte);
+                timeout = 2000;
+            }
+            __asm__("nop");
         }
-        vTaskDelay(pdMS_TO_TICKS(10));  /* 10ms 轮询 */
+        vTaskDelay(pdMS_TO_TICKS(5));
     }
 }
 
