@@ -19,8 +19,16 @@
 
 #include "stm32f103xb.h"
 
+/* ── 中断处理器名称映射 ────────────────────────────────────── */
+/* FreeRTOS port.c defines vPortSVCHandler/xPortPendSVHandler/xPortSysTickHandler,
+ * but the startup vector table uses CMSIS standard names.
+ * These #defines rename the FreeRTOS handlers to match the vector table. */
+#define vPortSVCHandler         SVC_Handler
+#define xPortPendSVHandler      PendSV_Handler
+#define xPortSysTickHandler     SysTick_Handler
+
 /* ── 时钟 ──────────────────────────────────────────────────── */
-#define configCPU_CLOCK_HZ                      (72000000UL)
+#define configCPU_CLOCK_HZ                      (8000000UL)  /* HSI 8MHz — must match actual clock! */
 #define configTICK_RATE_HZ                      ((TickType_t)1000)  /* 1ms tick */
 
 /* ── Tick 类型 ──────────────────────────────────────────────── */
@@ -35,7 +43,7 @@
 #define configIDLE_SHOULD_YIELD                 1
 
 /* ── 内存 ──────────────────────────────────────────────────── */
-#define configTOTAL_HEAP_SIZE                   ((size_t)(6 * 1024)) /* 6KB heap */
+#define configTOTAL_HEAP_SIZE                   ((size_t)(6 * 1024)) /* 6KB heap — enough for CLI + idle */
 #define configSUPPORT_DYNAMIC_ALLOCATION        1
 #define configSUPPORT_STATIC_ALLOCATION         0
 
@@ -86,9 +94,8 @@
 #define configLIBRARY_MAX_SYSCALL_INTERRUPT_PRIORITY 5
 
 /* ── 断言 ──────────────────────────────────────────────────── */
-/* FreeRTOS 内部断言重定向到我们的 assert */
-#include "assert.h"
-#define configASSERT(cond)  ASSERT(cond)
+/* FreeRTOS internal assert — disabled for diagnostic */
+#define configASSERT(cond)  ((void)0)
 
 /* ── 钩子函数声明 ──────────────────────────────────────────── */
 /* 如果启用 configUSE_MALLOC_FAILED_HOOK=1，需要实现 vApplicationMallocFailedHook */

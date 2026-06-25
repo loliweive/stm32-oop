@@ -8,11 +8,15 @@
 #include <stdio.h>
 
 /* ── ANSI 转义码 ───────────────────────────────────────────────── */
+#if CLI_ANSI
 #define ANSI_ESC      "\x1B"
-#define ANSI_CURSOR_L "\x1B[%zuD"    /* 光标左移 N */
 #define ANSI_CLEAR_EOL "\x1B[0K"     /* 清除到行尾 */
-#define ANSI_SAVE     "\x1B[s"       /* 保存光标 */
-#define ANSI_RESTORE  "\x1B[u"       /* 恢复光标 */
+#define ANSI_COL0      "\x1B[0G"     /* 光标到列0 (替代 \r) */
+#define ANSI_CRLF      "\x1B[0G\n"   /* 列0+换行 (替代 \r\n) */
+#else
+#define ANSI_COL0      "\r"
+#define ANSI_CRLF      "\r\n"
+#endif
 
 /* ── 内部输出 ──────────────────────────────────────────────────── */
 static void _write(const CLI *cli, const char *s)
@@ -62,19 +66,31 @@ static void _line_clear(CLI *cli)
 }
 
 /* ── 行刷新 (重绘) ──────────────────────────────────────────────── */
+#if CLI_ANSI
 static void _redraw_line(const CLI *cli)
 {
-    _write(cli, "\r" CLI_PROMPT);
+    _write(cli, ANSI_COL0 CLI_PROMPT);
     _write(cli, cli->line);
 
     /* 光标定位 */
     if (cli->cursor < cli->length) {
-        char buf[12];
-        int n = snprintf(buf, sizeof(buf), "\r\x1B[%zuC", strlen(CLI_PROMPT) + cli->cursor);
+        char buf[16];
+        int n = snprintf(buf, sizeof(buf), ANSI_COL0 "\x1B[%zuC",
+                         strlen(CLI_PROMPT) + cli->cursor);
         _write_n(cli, buf, (size_t)n);
     }
     _write(cli, ANSI_CLEAR_EOL);
 }
+#else
+/* 哑终端/本地回显模式: \r 重绘整行 */
+static void _redraw_line(const CLI *cli)
+{
+    _write(cli, "\r" CLI_PROMPT);
+    _write(cli, cli->line);
+    _write(cli, " \r" CLI_PROMPT);
+    _write(cli, cli->line);
+}
+#endif
 
 #if CLI_HISTORY_DEPTH > 0
 static void _history_push(CLI *cli, const char *line)
@@ -141,7 +157,7 @@ static void _history_navigate(CLI *cli, int direction)
 
 static void _execute_line(CLI *cli)
 {
-    _write(cli, "\r\n");
+    _write(cli, ANSI_CRLF);
 
     if (cli->line[0] == '\0') {
         cli_prompt(cli);
@@ -268,7 +284,7 @@ void cli_init(CLI *cli, const CLICommand *commands,
 
 void cli_feed(CLI *cli, char c)
 {
-    /* 转义序列处理 */
+    /* 转义序列处理 — 始终启用 (箭头键/历史) */
     if (cli->esc_state > 0 || c == '\x1B') {
         _handle_escape(cli, c);
         return;
@@ -276,8 +292,10 @@ void cli_feed(CLI *cli, char c)
 
     switch (c) {
     case '\r':
-    case '\n':
         _execute_line(cli);
+        break;
+    case '\n':
+        /* LF alone — ignore to avoid double-exec on CR+LF */
         break;
 
     case '\b':
@@ -285,7 +303,17 @@ void cli_feed(CLI *cli, char c)
         if (cli->cursor > 0) {
             cli->cursor--;
             _line_delete_at_cursor(cli);
+#if !CLI_LOCAL_ECHO
+#if CLI_ANSI
             _redraw_line(cli);
+#else
+            _write(cli, "\r" CLI_PROMPT);
+            _write(cli, cli->line);
+            _write(cli, " ");
+            _write(cli, "\r" CLI_PROMPT);
+            _write(cli, cli->line);
+#endif
+#endif
         }
         break;
 
@@ -306,7 +334,13 @@ void cli_feed(CLI *cli, char c)
                 cli->length = strlen(match);
                 cli->cursor = cli->length;
                 _line_insert(cli, ' ');
+#if CLI_ANSI
                 _redraw_line(cli);
+#else
+                /* 哑终端: 输出补全结果 */
+                _write(cli, "\r" CLI_PROMPT);
+                _write(cli, cli->line);
+#endif
             } else if (match_count > 1) {
                 /* 多个匹配 — 显示可选列表 */
                 _write(cli, "\r\n");
@@ -325,7 +359,13 @@ void cli_feed(CLI *cli, char c)
     default:
         if (c >= 0x20 && c <= 0x7E) { /* 可打印字符 */
             _line_insert(cli, c);
+#if !CLI_LOCAL_ECHO
+#if CLI_ANSI
             _redraw_line(cli);
+#else
+            _write_n(cli, &c, 1);
+#endif
+#endif
         }
         break;
     }

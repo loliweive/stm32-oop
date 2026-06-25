@@ -32,12 +32,12 @@ static void _cs_high(SpiFlash *f) {
 
 /* ── SPI 传输 ───────────────────────────────────────────── */
 static uint8_t _spi_xfer(SpiFlash *f, uint8_t byte) {
-    SpiPort sp; SpiPort_ctor(&sp, f->spi, 1000000, 36000000, 0);
+    SpiPort sp; SpiPort_ctor(&sp, f->spi, 1000000, 8000000, 0);
     return spi_transfer(&sp, byte);
 }
 
 static void _spi_read(SpiFlash *f, uint8_t *buf, size_t len) {
-    SpiPort sp; SpiPort_ctor(&sp, f->spi, 1000000, 36000000, 0);
+    SpiPort sp; SpiPort_ctor(&sp, f->spi, 1000000, 8000000, 0);
     for (size_t i = 0; i < len; i++) buf[i] = spi_transfer(&sp, 0xFF);
 }
 
@@ -111,7 +111,7 @@ bool spi_flash_init(SpiFlash *flash, void *spi, void *cs_port, uint16_t cs_pin)
 
     /* 初始化 SPI */
     SpiPort sp;
-    SpiPort_ctor(&sp, spi, 1000000, 36000000, 0);  /* 1MHz, mode 0 */
+    SpiPort_ctor(&sp, spi, 1000000, 8000000, 0);  /* 1MHz, mode 0 */
     spi_init(&sp);
 
     return _detect_flash(flash);

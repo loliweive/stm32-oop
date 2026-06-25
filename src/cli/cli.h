@@ -68,6 +68,8 @@ typedef struct {
 #define CLI_MAX_ARGS          8     /* 最大参数数量 */
 #define CLI_HISTORY_DEPTH     4     /* 命令历史深度 (0=禁用) */
 #define CLI_PROMPT            "> "  /* 提示符 */
+#define CLI_ANSI              1     /* 0=哑终端模式 1=ANSI终端 */
+#define CLI_LOCAL_ECHO        0     /* 1=终端本地回显 0=CLI回显 */
 
 /* ── CLI 实例 ──────────────────────────────────────────────────── */
 struct CLI {

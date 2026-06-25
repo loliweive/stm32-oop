@@ -77,10 +77,11 @@ set(MOCK_SRC
     ${TEST_DIR}/mocks/mock_uart.c
 )
 
-# HAL source under test
+# HAL source under test (rcc.c needed by uart_init → rcc_get_config)
 set(HAL_SRC
     ${ROOT_DIR}/src/hal/gpio.c
     ${ROOT_DIR}/src/hal/uart.c
+    ${ROOT_DIR}/src/hal/rcc.c
 )
 
 add_host_test(test_gpio

@@ -39,7 +39,6 @@ elseif(BUILD_MODE STREQUAL "stm32f103")
         "${STM32_SRC_DIR}/hal"
         "${STM32_SRC_DIR}/utils"
         "${STM32_SRC_DIR}/app/oled_test"
-        "${STM32_SRC_DIR}/sensor"
         "${STM32_SRC_DIR}/display"
     )
 
@@ -54,15 +53,10 @@ elseif(BUILD_MODE STREQUAL "stm32f103")
         ${STM32_SRC_DIR}/utils/delay.c
         ${STM32_SRC_DIR}/utils/assert.c
         ${STM32_SRC_DIR}/hal/gpio.c
-        ${STM32_SRC_DIR}/hal/uart.c
         ${STM32_SRC_DIR}/hal/rcc.c
-        ${STM32_SRC_DIR}/hal/timer.c
         ${STM32_SRC_DIR}/hal/i2c.c
-        ${STM32_SRC_DIR}/hal/spi.c
-        ${STM32_SRC_DIR}/hal/adc.c
-        ${STM32_SRC_DIR}/hal/nvic.c
-        ${STM32_SRC_DIR}/app/oled_test/main.c
         ${STM32_SRC_DIR}/display/ascii_font.c
+        ${STM32_SRC_DIR}/app/uart_test/main.c
     )
 
     target_include_directories(${PROJECT_NAME} PRIVATE ${STM32_INCLUDES})
@@ -108,12 +102,8 @@ elseif(BUILD_MODE STREQUAL "freertos")
         "${STM32_SRC_DIR}/hal"
         "${STM32_SRC_DIR}/utils"
         "${STM32_SRC_DIR}/app/freertos_demo"
-        "${STM32_SRC_DIR}/app/ds18b20_freertos"
-        "${STM32_SRC_DIR}/sensor"
+        "${STM32_SRC_DIR}/app/cli_minimal"
         "${STM32_SRC_DIR}/cli"
-        "${STM32_SRC_DIR}/ota"
-        "${STM32_SRC_DIR}/display"
-        "${STM32_SRC_DIR}/storage"
     )
 
     # FreeRTOS kernel sources (Cortex-M3/GCC port + heap_4)
@@ -137,28 +127,13 @@ elseif(BUILD_MODE STREQUAL "freertos")
         ${STM32_SRC_DIR}/utils/delay.c
         ${STM32_SRC_DIR}/utils/assert.c
         ${STM32_SRC_DIR}/hal/gpio.c
-        ${STM32_SRC_DIR}/hal/uart.c
         ${STM32_SRC_DIR}/hal/rcc.c
-        ${STM32_SRC_DIR}/hal/timer.c
         ${STM32_SRC_DIR}/hal/i2c.c
-        ${STM32_SRC_DIR}/hal/spi.c
-        ${STM32_SRC_DIR}/hal/adc.c
-        ${STM32_SRC_DIR}/hal/nvic.c
-        ${STM32_SRC_DIR}/app/ds18b20_freertos/main.c
-        ${STM32_SRC_DIR}/app/freertos_demo/freertos_scheduler.c
-        ${STM32_SRC_DIR}/app/freertos_demo/freertos_hooks.c
-        ${STM32_SRC_DIR}/sensor/onewire.c
-        ${STM32_SRC_DIR}/sensor/ds18b20.c
-        ${STM32_SRC_DIR}/sensor/dht11.c
-        ${STM32_SRC_DIR}/sensor/light_sensor.c
-        ${STM32_SRC_DIR}/cli/cli.c
-        ${STM32_SRC_DIR}/ota/ota_protocol.c
-        ${STM32_SRC_DIR}/ota/ota_flash.c
-        ${STM32_SRC_DIR}/ota/ota_client.c
-        ${STM32_SRC_DIR}/ota/ota_transport_shared.c
-        ${STM32_SRC_DIR}/display/ssd1306.c
         ${STM32_SRC_DIR}/display/ascii_font.c
-        ${STM32_SRC_DIR}/storage/spi_flash.c
+        ${STM32_SRC_DIR}/hal/uart.c
+        ${STM32_SRC_DIR}/app/cli_minimal/main.c
+        ${STM32_SRC_DIR}/app/freertos_demo/freertos_hooks.c
+        ${STM32_SRC_DIR}/cli/cli.c
         ${FREERTOS_SRC}
     )
 
@@ -212,9 +187,8 @@ elseif(BUILD_MODE STREQUAL "bootloader")
         ${STM32_SRC_DIR}/core/ring_buffer.c
         ${STM32_SRC_DIR}/core/list.c
         ${STM32_SRC_DIR}/hal/gpio.c
-        ${STM32_SRC_DIR}/hal/uart.c
         ${STM32_SRC_DIR}/hal/rcc.c
-        ${STM32_SRC_DIR}/hal/nvic.c
+        ${STM32_SRC_DIR}/hal/uart.c
         ${STM32_SRC_DIR}/utils/assert.c
         ${STM32_SRC_DIR}/ota/ota_protocol.c
         ${STM32_SRC_DIR}/ota/ota_flash.c
