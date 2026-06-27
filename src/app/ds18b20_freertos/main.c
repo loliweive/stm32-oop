@@ -443,12 +443,12 @@ static void _dputs(const char *s) { while(*s) _dputc(*s++); }
 
 int main(void)
 {
-    rcc_set_sysclk(RCC_HSI, 0);
+    rcc_set_sysclk(RCC_PLL, 9);
     rcc_enable_gpio('A'); rcc_enable_gpio('C'); rcc_enable_usart(1);
 
     /* Raw UART init for diagnostics */
     GPIOA->CRH = (GPIOA->CRH & ~(0xF<<4)) | (0xB<<4); /* PA9 TX */
-    USART1->BRR = 69; USART1->CR1 = (1<<13)|(1<<3);
+    USART1->BRR = 625; USART1->CR1 = (1<<13)|(1<<3);
     DLOG("CP0: boot");
 
     /* 初始化 LED (PC13) */
@@ -474,7 +474,7 @@ int main(void)
         gpio_set_mode(&sda, GPIO_CNF_ALT_OD | GPIO_MODE_OUT_50MHZ);
 
         I2cPort i2c_port;
-        I2cPort_ctor(&i2c_port, OLED_I2C, 400000, 8000000);  /* 400kHz @ 8MHz HSI */
+        I2cPort_ctor(&i2c_port, OLED_I2C, 400000, 36000000);  /* 400kHz @ 8MHz HSI */
         i2c_init(&i2c_port);
     }
     ssd1306_ctor(&oled, OLED_I2C, OLED_ADDR);

@@ -1,15 +1,17 @@
 /**
- * @brief  外设测试: SPI Flash W25Qxx (SPI1 PA5/6/7 + PB9 CS) — JEDEC ID
- * @usage  烧录后用逻辑分析仪或重新烧录 UART echo 查看结果。
- *         LED: 快闪3次=就绪, 慢闪=读ID失败, 常亮=读ID成功。
- *         正常=JEDEC ID 非 0x000000 且非 0xFFFFFF。
+ * @brief  外设测试: SPI Flash W25Qxx (SPI1 PA5/6/7 + PB9 CS)
+ * @usage  LED 常亮=JEDEC ID OK, LED 慢闪=未检测到
  */
 #include "stm32f103xb.h"
 #include "rcc.h"
 #include "gpio.h"
-#include "spi.h"
 
 static GpioPin led, cs;
+
+/* SysTick 1ms delay */
+static void delay_ms(uint32_t ms) {
+    while (ms--) while (!(SysTick->CTRL & (1<<16))) {}
+}
 
 static uint8_t spi_xfer(uint8_t tx) {
     while (!(SPI1->SR & (1<<1))) {}  /* TXE */
@@ -19,7 +21,9 @@ static uint8_t spi_xfer(uint8_t tx) {
 }
 
 int main(void) {
-    rcc_set_sysclk(RCC_HSI, 0);
+    rcc_set_sysclk(RCC_PLL, 9);
+    SysTick->LOAD = 72000 - 1; SysTick->VAL = 0; SysTick->CTRL = 5;
+
     rcc_enable_gpio('A'); rcc_enable_gpio('B'); rcc_enable_gpio('C');
     rcc_enable_spi(1);
 
@@ -27,7 +31,7 @@ int main(void) {
     GpioPin_ctor(&led, GPIOC, GPIO_PIN_13);
     gpio_set_mode(&led, GPIO_MODE_OUT_PP); gpio_set(&led, 1);
 
-    /* SPI1 GPIO: PA5=SCK, PA6=MISO, PA7=MOSI */
+    /* SPI1 GPIO */
     { GpioPin sck, miso, mosi;
       GpioPin_ctor(&sck,  GPIOA, GPIO_PIN_5); gpio_set_mode(&sck,  GPIO_CNF_ALT_PP | GPIO_MODE_OUT_50MHZ);
       GpioPin_ctor(&miso, GPIOA, GPIO_PIN_6); gpio_set_mode(&miso, GPIO_CNF_FLOAT | GPIO_MODE_IN);
@@ -37,30 +41,30 @@ int main(void) {
     GpioPin_ctor(&cs, GPIOB, GPIO_PIN_9);
     gpio_set_mode(&cs, GPIO_MODE_OUT_PP); gpio_set(&cs, 1);
 
-    /* SPI1 init: Master, fPCLK/64 (~125kHz @ 8MHz), CPOL=0 CPHA=0 */
-    SPI1->CR1 = (4<<3) | (1<<2) | (1<<6) | (1<<9);
+    /* SPI1: Master, fPCLK/256 (~281kHz), SW slave mgmt, MSB first */
+    SPI1->CR1 = (7<<3) | (1<<2) | (1<<8) | (1<<9) | (1<<6);
 
-    /* 启动: 3 快闪 */
+    /* 启动: 3 慢闪 (~500ms each) */
     for (int i = 0; i < 3; i++) {
-        gpio_set(&led, 0); for (volatile uint32_t j = 0; j < 100000; j++) __asm__("nop");
-        gpio_set(&led, 1); for (volatile uint32_t j = 0; j < 100000; j++) __asm__("nop");
+        gpio_set(&led, 0); delay_ms(200);
+        gpio_set(&led, 1); delay_ms(200);
     }
 
-    /* 读 JEDEC ID: CS↓ → 0x9F → 3 bytes → CS↑ */
+    /* 读 JEDEC ID */
     gpio_set(&cs, 0);
+    for (volatile int i = 0; i < 10; i++) __asm__("nop");
     spi_xfer(0x9F);
     uint8_t mfg = spi_xfer(0xFF);
     uint8_t mem = spi_xfer(0xFF);
     uint8_t cap = spi_xfer(0xFF);
     gpio_set(&cs, 1);
 
-    /* 验证: 全0或全FF = 失败 */
     uint32_t id = ((uint32_t)mfg << 16) | ((uint32_t)mem << 8) | cap;
     if (id == 0x000000 || id == 0xFFFFFF) {
         /* 失败: 慢闪 */
         while (1) {
-            gpio_set(&led, 0); for (volatile uint32_t j = 0; j < 800000; j++) __asm__("nop");
-            gpio_set(&led, 1); for (volatile uint32_t j = 0; j < 800000; j++) __asm__("nop");
+            gpio_set(&led, 0); delay_ms(500);
+            gpio_set(&led, 1); delay_ms(500);
         }
     }
 

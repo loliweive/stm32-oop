@@ -265,7 +265,9 @@ elseif(BUILD_MODE STREQUAL "peripheral")
     if(PERIPHERAL STREQUAL "led")
         # LED only needs gpio+rcc — no extra sources
     elseif(PERIPHERAL STREQUAL "uart_echo")
-        # Pure raw register — no extra sources needed
+        list(APPEND PERIPHERAL_EXTRA_SRC
+            ${STM32_SRC_DIR}/hal/rcc.c
+        )
     elseif(PERIPHERAL STREQUAL "oled")
         list(APPEND PERIPHERAL_EXTRA_SRC
             ${STM32_SRC_DIR}/hal/i2c.c

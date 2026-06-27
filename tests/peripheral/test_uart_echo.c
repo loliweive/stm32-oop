@@ -4,9 +4,11 @@
  *         正常=每个按键都被回显。
  */
 #include "stm32f103xb.h"
+#include "rcc.h"
 
 int main(void) {
-    /* 时钟 */
+    /* 时钟 72MHz PLL */
+    rcc_set_sysclk(RCC_PLL, 9);
     RCC->APB2ENR |= (1<<2) | (1<<4) | (1<<14);  /* GPIOA + GPIOC + USART1 */
 
     /* LED PC13 */
@@ -17,15 +19,21 @@ int main(void) {
     GPIOA->CRH = (GPIOA->CRH & ~((0xF<<4)|(0xF<<8))) | (0xB<<4) | (0x8<<8);
     GPIOA->BSRR = (1<<10);  /* PA10 pull-up */
 
-    /* USART1 115200 @ 8MHz HSI */
-    USART1->BRR = 69;  /* 8000000/115200 = 69.4 */
+    /* USART1 115200 @ 72MHz APB2 */
+    USART1->BRR = 625;  /* 72000000/115200 = 625 */
     USART1->CR1 = (1<<13) | (1<<3) | (1<<2) | (1<<5);  /* UE+TE+RE+RXNEIE */
     USART1->CR2 = 0;
     USART1->CR3 = 0;
 
-    /* 闪灯 1 次: 就绪 */
+    /* SysTick 1ms (72MHz → 72000 ticks/ms) */
+    SysTick->LOAD = 72000 - 1;
+    SysTick->VAL  = 0;
+    SysTick->CTRL = 5;  /* HCLK/1, no interrupt */
+
+    /* 闪灯 1 次: 就绪 (~500ms) */
     GPIOC->BSRR = (1<<29);  /* 亮 */
-    for (volatile uint32_t i = 0; i < 200000; i++) __asm__("nop");
+    for (volatile uint32_t i = 0; i < 36; i++)  /* 36 × 0xFFFFFF ≈ 500ms */
+        while (!(SysTick->CTRL & (1<<16))) {}
     GPIOC->BSRR = (1<<13);  /* 灭 */
 
     while (1) {
@@ -39,11 +47,13 @@ int main(void) {
                 USART1->DR = '\n';
             }
         }
-        /* LED 心跳 — 有数据时快闪 */
-        static volatile uint32_t tick = 0;
-        if (++tick > 100000) {
-            tick = 0;
-            GPIOC->ODR ^= (1<<13);
+        /* LED 心跳: 1Hz 闪烁 (SysTick COUNTFLAG 轮询) */
+        static uint32_t ms_tick = 0;
+        if (SysTick->CTRL & (1<<16)) {  /* COUNTFLAG — 1ms 过去了 */
+            if (++ms_tick >= 1000) {
+                ms_tick = 0;
+                GPIOC->ODR ^= (1<<13);  /* 翻转 LED */
+            }
         }
     }
 }

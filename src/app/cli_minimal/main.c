@@ -80,7 +80,7 @@ static void task_cli(void *p) {
       GPIOA->CRH = (GPIOA->CRH & ~(0xFUL<<4))  | (0xBUL<<4);
       GPIOA->CRH = (GPIOA->CRH & ~(0xFUL<<8))  | (0x4UL<<8);
       /* USART1 115200@8MHz */
-      USART1->BRR = (8000000UL + 115200/2) / 115200;
+      USART1->BRR = (72000000UL + 115200/2) / 115200;
       USART1->CR1 = (1<<13) | (1<<3) | (1<<2);
     }
 
@@ -101,7 +101,7 @@ static void task_cli(void *p) {
     { GpioPin scl,sda;
       GpioPin_ctor(&scl,GPIOB,GPIO_PIN_6); gpio_set_mode(&scl,GPIO_CNF_ALT_OD|GPIO_MODE_OUT_2MHZ);
       GpioPin_ctor(&sda,GPIOB,GPIO_PIN_7); gpio_set_mode(&sda,GPIO_CNF_ALT_OD|GPIO_MODE_OUT_2MHZ); }
-    I2cPort_ctor(&i2c, I2C1, 100000, 8000000);  /* 100kHz, PCLK=8MHz */
+    I2cPort_ctor(&i2c, I2C1, 100000, 36000000);  /* 100kHz, PCLK=8MHz */
     i2c_init(&i2c);
     ssd1306_ctor(&oled, I2C1, 0x3C);
     {
@@ -134,11 +134,11 @@ int main(void)
     RCC->APB2ENR |= (1<<2) | (1<<4) | (1<<14);
     GPIOA->CRH = (GPIOA->CRH & ~(0xFUL<<4))  | (0xBUL<<4);
     GPIOA->CRH = (GPIOA->CRH & ~(0xFUL<<8))  | (0x4UL<<8);
-    USART1->BRR = (8000000UL + 115200/2) / 115200;
+    USART1->BRR = (72000000UL + 115200/2) / 115200;
     USART1->CR1 = (1<<13) | (1<<3) | (1<<2);
     raw_puts("\r\n=== MAIN START ===\r\n");
 
-    rcc_set_sysclk(RCC_HSI, 0);
+    rcc_set_sysclk(RCC_PLL, 9);
     rcc_enable_gpio('A'); rcc_enable_gpio('C'); rcc_enable_usart(1);
 
     /* LED */

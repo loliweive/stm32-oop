@@ -33,7 +33,7 @@ static void delay_ms(uint32_t n) {
 int main(void)
 {
     /* 时钟 & GPIO */
-    rcc_set_sysclk(RCC_HSI, 0);
+    rcc_set_sysclk(RCC_PLL, 9);
     rcc_enable_gpio('B');
     rcc_enable_gpio('C');
     rcc_enable_i2c(1);

@@ -232,12 +232,13 @@ openocd -f interface/stlink.cfg -f target/stm32f1x.cfg \
 
 | 测试 | 文件 | 大小 | 正常表现 |
 |------|------|:--:|------|
-| LED | `test_led.bin` | 676B | PC13 以 1Hz 闪烁 |
-| UART Echo | `test_uart_echo.bin` | 376B | 串口 115200, 敲键回显 |
-| OLED | `test_oled.bin` | 13.7KB | 依次显示文本→几何→计数器 |
-| Button | `test_button.bin` | 748B | 按 PB14 → LED 亮 |
-| SPI Flash | `test_spi_flash.bin` | 1KB | LED 常亮=JEDEC ID OK, 慢闪=失败 |
-| DS18B20 | `test_ds18b20.bin` | 1.2KB | LED 常亮=传感器 OK, 慢闪=未检测到 |
+| LED | `test_led.bin` | 684B | PC13 亮1秒灭1秒 (SysTick 精确定时 @72MHz) |
+| UART Echo | `test_uart_echo.bin` | 376B | 串口 115200, 敲键原样回显, 回车补换行 |
+| OLED | `test_oled.bin` | 13.7KB | 第1屏: 文本"OLED Test/SSD1306 OK" → 第2屏: 几何图形 → 第3屏: 计数器 |
+| Button | `test_button.bin` | 748B | 启动3快闪→就绪。按 PB14→LED亮, 松→LED灭 |
+| SPI Flash | `test_spi_flash.bin` | 1KB | 启动3快闪→就绪。LED常亮=JEDEC ID OK, LED慢闪=未检测到 |
+| DS18B20 | `test_ds18b20.bin` | 1.2KB | 启动1快闪→就绪。LED常亮=传感器OK, LED慢闪=未检测到(检查PA1+4.7kΩ上拉) |
+| CLI+OLED | `test_cli_oled.bin` | 30KB | 串口115200: help/hello/uptime/led/oled, OLED显示"OLED Ready" |
 
 **规则: 新增/修改外设驱动后, 必须更新对应的测试固件并重新生成 .bin**
 

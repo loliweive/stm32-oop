@@ -9,10 +9,20 @@
 #include "ssd1306.h"
 #include "oled.h"
 
-static void dly(uint32_t n) { while (n--) __asm__("nop"); }
+/* SysTick 毫秒延时 */
+static void delay_ms(uint32_t ms) {
+    while (ms--) {
+        while (!(SysTick->CTRL & (1<<16))) {}  /* Wait COUNTFLAG = 1ms */
+    }
+}
 
 int main(void) {
-    rcc_set_sysclk(RCC_HSI, 0);
+    rcc_set_sysclk(RCC_PLL, 9);
+    /* SysTick 1ms tick */
+    SysTick->LOAD = 72000 - 1;
+    SysTick->VAL  = 0;
+    SysTick->CTRL = 5;
+
     rcc_enable_gpio('B'); rcc_enable_gpio('C'); rcc_enable_i2c(1);
 
     /* LED PC13 */
@@ -24,21 +34,21 @@ int main(void) {
       GpioPin_ctor(&scl, GPIOB, GPIO_PIN_6); gpio_set_mode(&scl, GPIO_CNF_ALT_OD | GPIO_MODE_OUT_50MHZ);
       GpioPin_ctor(&sda, GPIOB, GPIO_PIN_7); gpio_set_mode(&sda, GPIO_CNF_ALT_OD | GPIO_MODE_OUT_50MHZ); }
 
-    I2cPort ip; I2cPort_ctor(&ip, I2C1, 400000, 8000000); i2c_init(&ip);
+    I2cPort ip; I2cPort_ctor(&ip, I2C1, 400000, 36000000); i2c_init(&ip);  /* APB1=36MHz @72MHz */
 
     /* OLED */
     SSD1306 oled; ssd1306_ctor(&oled, I2C1, 0x3C);
     OledDisplay *d = &oled.base;
     oled_init(d);
 
-    /* 1: 文本 */
+    /* 1: 文本 (2秒) */
     oled_clear(d);
     oled_show_string(d, 0,  0, "OLED Test", OLED_FONT_8X16);
     oled_show_string(d, 0, 16, "SSD1306 OK", OLED_FONT_8X16);
     oled_show_string(d, 0, 40, "I2C1 PB6/PB7", OLED_FONT_6X8);
-    oled_flush(d); dly(8000000);
+    oled_flush(d); delay_ms(2000);
 
-    /* 2: 几何 */
+    /* 2: 几何 (2秒) */
     oled_clear(d);
     oled_draw_line(d, 0, 31, 127, 31);
     oled_draw_line(d, 63, 0, 63, 63);
@@ -47,9 +57,9 @@ int main(void) {
     oled_draw_circle(d, 74, 10, 8, OLED_UNFILLED);
     oled_draw_circle(d, 100, 10, 8, OLED_FILLED);
     oled_draw_triangle(d, 4, 42, 22, 42, 13, 60, OLED_UNFILLED);
-    oled_flush(d); dly(8000000);
+    oled_flush(d); delay_ms(2000);
 
-    /* 3: 计数器 */
+    /* 3: 计数器 (每秒递增) */
     int cnt = 0;
     while (1) {
         oled_clear(d);
@@ -57,8 +67,8 @@ int main(void) {
         oled_show_num(d, 0, 28, cnt, 6, OLED_FONT_8X16);
         oled_show_hex(d, 0, 48, cnt, 8, OLED_FONT_6X8);
         oled_flush(d);
-        gpio_set(&led, 0); dly(200000); gpio_set(&led, 1);
-        dly(4000000);
+        gpio_set(&led, 0); delay_ms(100); gpio_set(&led, 1);
+        delay_ms(900);
         cnt++;
     }
 }

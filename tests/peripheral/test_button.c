@@ -7,7 +7,7 @@
 #include "gpio.h"
 
 int main(void) {
-    rcc_set_sysclk(RCC_HSI, 0);
+    rcc_set_sysclk(RCC_PLL, 9);
     rcc_enable_gpio('B'); rcc_enable_gpio('C');
 
     GpioPin led, btn;
@@ -16,8 +16,8 @@ int main(void) {
     gpio_set(&led, 1);
 
     GpioPin_ctor(&btn, GPIOB, GPIO_PIN_14);
-    gpio_set_mode(&btn, GPIO_CNF_PP | GPIO_MODE_IN);
-    gpio_set(&btn, 1);  /* 内部上拉 */
+    gpio_set_mode(&btn, 0x8 | GPIO_MODE_IN);  /* CNF=10: Input with pull-up/pull-down */
+    gpio_set(&btn, 1);  /* ODR=1 → pull-up */
 
     /* 启动闪烁: 3 快闪 = 就绪 */
     for (int i = 0; i < 3; i++) {
