@@ -29,12 +29,14 @@
 #define SENSOR_DS18B20  1
 #define SENSOR_DHT11    2
 #define SENSOR_LIGHT    3
+#define SENSOR_BMP280   4
 #define SENSOR_TYPE     SENSOR_DS18B20   /* <── 改这行切换传感器! */
 
 #include "onewire.h"
 #include "ds18b20.h"
 #include "dht11.h"
 #include "light_sensor.h"
+#include "bmp280.h"
 #include "ssd1306.h"
 #include "oled.h"
 #include "i2c.h"
@@ -71,6 +73,7 @@ static OneWireBus    ow_bus;          /* DS18B20 复用 */
 static DS18B20       ds18b20_obj;     /* DS18B20 实例 */
 static DHT11         dht11_obj;       /* DHT11 实例 */
 static LightSensor   light_obj;       /* M7 光敏实例 */
+static BMP280        bmp280_obj;       /* BMP280 I2C 温压实例 */
 static UartPort      uart;
 static GpioPin       led;
 static GpioPin       btn;            /* PB14 上拉按键 */
@@ -398,6 +401,9 @@ static void task_sensor(void *params)
                 GPIOB, GPIO_PIN_11);  /* PB11 = DO 数字阈值 */
     rcc_enable_gpio('B');        /* 使能 GPIOB 时钟 */
     rcc_enable_adc(1);           /* 使能 ADC1 时钟 */
+#elif SENSOR_TYPE == SENSOR_BMP280
+    /* BMP280: I2C1 PB6/PB7, 与 OLED 共用 (I2C 时钟已在 OLED 初始化中使能) */
+    sensor = bmp280_create(&bmp280_obj, I2C1, 0x76);
 #endif
 
     /* ── 检查传感器是否就绪 ──────────────────────────────── */
