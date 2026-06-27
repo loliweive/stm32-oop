@@ -94,11 +94,12 @@ elseif(BUILD_MODE STREQUAL "stm32f103")
 elseif(BUILD_MODE STREQUAL "freertos")
     message(STATUS "=== BUILD MODE: STM32F103C8T6 + FreeRTOS ===")
 
-    if(APP_MODE)
-        set(LINKER_SCRIPT "${CMAKE_SOURCE_DIR}/linker/stm32f103c8_app.ld")
-        message(STATUS "  → App-only mode (0x08002000, for bootloader)")
-    else()
+    # Default: app mode (0x08002000, with bootloader). -DSTANDALONE=ON for direct flash
+    if(STANDALONE)
         set(LINKER_SCRIPT "${CMAKE_SOURCE_DIR}/linker/stm32f103c8.ld")
+    else()
+        set(LINKER_SCRIPT "${CMAKE_SOURCE_DIR}/linker/stm32f103c8_app.ld")
+        message(STATUS "  → App mode (0x08002000, bootloader required)")
     endif()
     set(FREERTOS_DIR   "${CMAKE_SOURCE_DIR}/lib/FreeRTOS")
 

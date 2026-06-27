@@ -32,18 +32,24 @@ git submodule update --init  # 首次需要
 cmake -B build/test -DBUILD_MODE=host && cmake --build build/test
 cd build/test && ctest --output-on-failure
 
-# 构建当前主固件 (FreeRTOS + CLI + Sensor + OLED + OTA)
+# App (默认 0x08002000, 配合 bootloader)
 cmake -B build/freertos -DBUILD_MODE=freertos && cmake --build build/freertos
 
-# 构建裸机固件
-cmake -B build/target -DBUILD_MODE=stm32f103 && cmake --build build/target
+# 独立 App (0x08000000, 无 bootloader)
+cmake -B build/standalone -DBUILD_MODE=freertos -DSTANDALONE=ON && cmake --build build/standalone
 
-# 构建 OTA Bootloader
+# Bootloader (8KB @ 0x08000000)
 cmake -B build/bootloader -DBUILD_MODE=bootloader && cmake --build build/bootloader
 
-# 烧录 (需要 ST-Link 连接)
+# 烧录 — bootloader + app (推荐)
 openocd -f interface/stlink.cfg -f target/stm32f1x.cfg \
-  -c "program build/freertos/stm32-oop.elf verify reset exit"
+  -c "program build/bootloader/stm32-oop.bin 0x08000000 verify" \
+  -c "program build/freertos/stm32-oop.bin 0x08002000 verify" \
+  -c "reset run" -c "shutdown"
+
+# 烧录 — 独立 App (调试用)
+openocd -f interface/stlink.cfg -f target/stm32f1x.cfg \
+  -c "program build/standalone/stm32-oop.bin 0x08000000 verify reset exit"
 ```
 
 ---
