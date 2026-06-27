@@ -10,12 +10,29 @@
 #include "ota_client.h"
 #include "ota_flash.h"
 #include "ota_config.h"
+#include "spi_flash.h"
 #include <string.h>
 
 /* ── 内部辅助 ─────────────────────────────────────────────────── */
 static uint8_t  rx_buf[OTA_FRAME_MAX_SIZE];
 static uint8_t  tx_buf[OTA_FRAME_MAX_SIZE];
 static uint32_t last_erased_page = 0xFFFFFFFF;  /* 追踪已擦页 */
+static uint8_t  page_buf[1024];  /* 外→内搬运用 */
+
+/* CRC32 (软件实现, ~150B ROM, 支持增量计算) */
+static uint32_t crc32_buf(const uint8_t *data, size_t len, uint32_t crc) {
+    static const uint32_t table[16] = {
+        0x00000000,0x1DB71064,0x3B6E20C8,0x26D930AC,
+        0x76DC4190,0x6B6B51F4,0x4DB26158,0x5005713C,
+        0xEDB88320,0xF00F9344,0xD6D6A3E8,0xCB61B38C,
+        0x9B64C2B0,0x86D3D2D4,0xA00AE278,0xBDBDF21C
+    };
+    for (size_t i = 0; i < len; i++) {
+        crc = table[(crc ^ data[i]) & 0xF] ^ (crc >> 4);
+        crc = table[(crc ^ (data[i] >> 4)) & 0xF] ^ (crc >> 4);
+    }
+    return crc;
+}
 
 static void set_state(OtaClient *c, OtaClientState s) { c->state = s; }
 
@@ -38,20 +55,25 @@ void ota_client_start(OtaClient *client)
 {
     /* 不提前擦除 — 收到数据后才逐页擦写, OTA 中断可恢复 */
     last_erased_page       = 0xFFFFFFFF;
-    client->current_addr   = OTA_APP_START;
+    client->current_addr   = client->ext_flash ? 0 : OTA_APP_START;
     client->received_bytes = 0;
     client->total_size     = 0;
     client->retry_count    = 0;
 
-    /* 无效化元数据 — 标记 OTA 未完成 (bootloader 检测到不会跳转) */
+    /* 无效化元数据 — 标记 OTA 未完成 */
     OtaMetadata meta;
     memset(&meta, 0, sizeof(meta));
     ota_flash_erase_range(OTA_METADATA_START, sizeof(meta));
     ota_flash_write(OTA_METADATA_START, (const uint8_t *)&meta, sizeof(meta));
 
-    /* 发送 HELLO */
-    size_t len = ota_build_hello(tx_buf, sizeof(tx_buf), client->seq++);
-    send_frame(client, tx_buf, len);
+    /* 外置 Flash: 擦除前 64KB 作为接收缓冲区 */
+    if (client->ext_flash) {
+        SpiFlash *ext = (SpiFlash *)client->ext_flash;
+        for (uint32_t addr = 0; addr < 65536; addr += 4096)
+            spi_flash_erase_sector(ext, addr);
+    }
+
+    /* 不主动发 HELLO — 等待 PC 端先发 */
     set_state(client, OTA_STATE_HANDSHAKE);
 }
 
@@ -81,7 +103,8 @@ bool ota_client_poll(OtaClient *client)
     switch (client->state) {
 
     case OTA_STATE_HANDSHAKE:
-        if (type == OTA_CMD_HELLO_ACK && plen >= 4) {
+        /* PC 端主动发 HELLO (含固件大小), STM32 回 HELLO_ACK */
+        if (type == OTA_CMD_HELLO && plen >= 4) {
             client->total_size = (uint32_t)payload[0]
                                | ((uint32_t)payload[1] << 8)
                                | ((uint32_t)payload[2] << 16)
@@ -92,49 +115,74 @@ bool ota_client_poll(OtaClient *client)
                 client->error_code = OTA_ERR_SIZE;
                 return false;
             }
+            /* 回复 HELLO_ACK (含固件大小) */
+            size_t alen = ota_build_hello_ack(tx_buf, sizeof(tx_buf), client->seq++, client->total_size);
+            send_frame(client, tx_buf, alen);
             set_state(client, OTA_STATE_RECEIVING);
         }
         break;
 
     case OTA_STATE_RECEIVING:
         if (type == OTA_CMD_DATA && plen > 0) {
-            /* 逐页擦除 — 只在需要时擦, OTA 中断可恢复 */
-            uint32_t page = client->current_addr & ~(OTA_FLASH_PAGE_SIZE - 1);
-            if (page != last_erased_page) {
-                ota_flash_erase_page(page);
-                last_erased_page = page;
-            }
-            /* 写入 Flash */
-            if (!ota_flash_write(client->current_addr, payload, plen)) {
-                client->error_code = OTA_ERR_FLASH_WRITE;
-                set_state(client, OTA_STATE_ERROR);
-                return false;
+            if (client->ext_flash) {
+                /* 写入外置 Flash (缓冲区), 不擦内部 Flash */
+                SpiFlash *ext = (SpiFlash *)client->ext_flash;
+                if (!spi_flash_write(ext, client->current_addr, payload, plen)) {
+                    client->error_code = OTA_ERR_FLASH_WRITE;
+                    set_state(client, OTA_STATE_ERROR);
+                    return false;
+                }
+            } else {
+                /* 直写内部 Flash (兼容旧行为) */
+                uint32_t page = client->current_addr & ~(OTA_FLASH_PAGE_SIZE - 1);
+                if (page != last_erased_page) {
+                    ota_flash_erase_page(page);
+                    last_erased_page = page;
+                }
+                if (!ota_flash_write(client->current_addr, payload, plen)) {
+                    client->error_code = OTA_ERR_FLASH_WRITE;
+                    set_state(client, OTA_STATE_ERROR);
+                    return false;
+                }
             }
             client->current_addr  += plen;
             client->received_bytes += plen;
 
-            /* 进度回调 */
-            if (client->on_progress) {
+            if (client->on_progress)
                 client->on_progress(client->received_bytes, client->total_size);
-            }
 
-            /* 发送 ACK */
+            /* ACK */
             size_t alen = ota_build_ack(tx_buf, sizeof(tx_buf), OTA_CMD_DATA, seq);
             send_frame(client, tx_buf, alen);
 
-            /* 接收完成? */
+            /* 接收完成 → 校验 */
             if (client->received_bytes >= client->total_size) {
                 set_state(client, OTA_STATE_VERIFYING);
             }
         } else if (type == OTA_CMD_VERIFY) {
-            /* 上位机主动请求校验 */
             set_state(client, OTA_STATE_VERIFYING);
         }
         break;
 
     case OTA_STATE_VERIFYING: {
-        /* 计算 CRC32 并发送校验结果 */
-        uint32_t crc = ota_flash_crc32(OTA_APP_START, client->received_bytes);
+        uint32_t crc;
+
+        if (client->ext_flash) {
+            /* 从外置 Flash 读取固件, 计算 CRC32 */
+            SpiFlash *ext = (SpiFlash *)client->ext_flash;
+            crc = 0xFFFFFFFF;
+            for (uint32_t off = 0; off < client->received_bytes; off += sizeof(page_buf)) {
+                size_t chunk = client->received_bytes - off;
+                if (chunk > sizeof(page_buf)) chunk = sizeof(page_buf);
+                spi_flash_read(ext, off, page_buf, chunk);
+                crc = crc32_buf(page_buf, chunk, crc);
+            }
+            crc ^= 0xFFFFFFFF;
+        } else {
+            crc = ota_flash_crc32(OTA_APP_START, client->received_bytes);
+        }
+
+        /* 发送校验结果 */
         size_t vlen = ota_build_verify(tx_buf, sizeof(tx_buf), seq,
                                        client->received_bytes, crc);
         send_frame(client, tx_buf, vlen);
@@ -143,6 +191,17 @@ bool ota_client_poll(OtaClient *client)
         size_t nr = ota_xport_recv(client->transport, rx_buf, sizeof(rx_buf), 2000);
         if (nr > 0 && ota_frame_decode(rx_buf, nr, &type, &seq, &payload, &plen)) {
             if (type == OTA_CMD_VERIFY_ACK) {
+                if (client->ext_flash) {
+                    /* 提交: 擦除内部 Flash → 从外部 Flash 搬入 */
+                    SpiFlash *ext = (SpiFlash *)client->ext_flash;
+                    ota_flash_erase_range(OTA_APP_START, client->received_bytes);
+                    for (uint32_t off = 0; off < client->received_bytes; off += sizeof(page_buf)) {
+                        size_t chunk = client->received_bytes - off;
+                        if (chunk > sizeof(page_buf)) chunk = sizeof(page_buf);
+                        spi_flash_read(ext, off, page_buf, chunk);
+                        ota_flash_write(OTA_APP_START + off, page_buf, chunk);
+                    }
+                }
                 /* 写入元数据 */
                 OtaMetadata meta;
                 memset(&meta, 0, sizeof(meta));

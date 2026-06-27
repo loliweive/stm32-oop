@@ -94,7 +94,12 @@ elseif(BUILD_MODE STREQUAL "stm32f103")
 elseif(BUILD_MODE STREQUAL "freertos")
     message(STATUS "=== BUILD MODE: STM32F103C8T6 + FreeRTOS ===")
 
-    set(LINKER_SCRIPT "${CMAKE_SOURCE_DIR}/linker/stm32f103c8.ld")
+    if(APP_MODE)
+        set(LINKER_SCRIPT "${CMAKE_SOURCE_DIR}/linker/stm32f103c8_app.ld")
+        message(STATUS "  → App-only mode (0x08002000, for bootloader)")
+    else()
+        set(LINKER_SCRIPT "${CMAKE_SOURCE_DIR}/linker/stm32f103c8.ld")
+    endif()
     set(FREERTOS_DIR   "${CMAKE_SOURCE_DIR}/lib/FreeRTOS")
 
     set(STM32_SRC_DIR "${CMAKE_SOURCE_DIR}/src")
@@ -207,6 +212,7 @@ elseif(BUILD_MODE STREQUAL "bootloader")
         "${STM32_SRC_DIR}/hal"
         "${STM32_SRC_DIR}/utils"
         "${STM32_SRC_DIR}/ota"
+        "${STM32_SRC_DIR}/storage"
     )
 
     add_executable(${PROJECT_NAME}
@@ -217,7 +223,14 @@ elseif(BUILD_MODE STREQUAL "bootloader")
         ${STM32_SRC_DIR}/hal/gpio.c
         ${STM32_SRC_DIR}/hal/rcc.c
         ${STM32_SRC_DIR}/hal/uart.c
+        ${STM32_SRC_DIR}/hal/spi.c
         ${STM32_SRC_DIR}/utils/assert.c
+        ${STM32_SRC_DIR}/storage/spi_flash.c
+        ${STM32_SRC_DIR}/ota/ota_flash.c
+        ${STM32_SRC_DIR}/ota/ota_client.c
+        ${STM32_SRC_DIR}/ota/ota_protocol.c
+        ${STM32_SRC_DIR}/ota/ota_transport_uart.c
+        ${STM32_SRC_DIR}/ota/ota_transport_shared.c
         ${STM32_SRC_DIR}/bootloader/main.c
     )
 

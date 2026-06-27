@@ -27,7 +27,8 @@ static void _uart_init(OtaTransport *self)
 
     /* PA10 = USART1 RX */
     GpioPin_ctor(&ctx->rx, GPIOA, GPIO_PIN_10);
-    gpio_set_mode(&ctx->rx, GPIO_CNF_FLOAT | GPIO_MODE_IN);
+    gpio_set_mode(&ctx->rx, 0x8 | GPIO_MODE_IN);  /* Pull-up, 防浮空噪声 */
+    gpio_set(&ctx->rx, 1);
 
     /* 初始化 UART: 115200, 无注入 (使用真实硬件) */
     UartPort_ctor(&ctx->uart, USART1, 115200);

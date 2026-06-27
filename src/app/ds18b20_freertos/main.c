@@ -215,7 +215,7 @@ static void cmd_uptime(CLI *c, int argc, char **argv)
 {
     (void)argc; (void)argv;
     uint32_t s = (uint32_t)(xTaskGetTickCount() / configTICK_RATE_HZ);
-    cli_printf(c, "Uptime: %lus (%lu:%02lu:%02lu)\r\n",
+    cli_printf(c, "Runtime: %lus (%lu:%02lu:%02lu)\r\n",
                (unsigned long)s,
                (unsigned long)(s / 3600),
                (unsigned long)((s % 3600) / 60),
@@ -237,26 +237,26 @@ static void cmd_ota_start(CLI *c, int argc, char **argv)
         return;
     }
 
-    cli_printf(c, "Starting OTA firmware update...\r\n");
-    cli_printf(c, "Send firmware now (60s timeout, do not type)...\r\n\r\n");
-
     ota_in_progress = true;
 
-    /* 排空 UART RX — 避免之前按键干扰 OTA 协议 */
+    /* 排空 UART RX */
     { uint8_t _dummy; while (uart_recv(&uart, &_dummy)) {} }
 
-    /* 初始化 OTA (复用当前 UART) */
+    /* 初始化 OTA */
     ota_transport_shared_create(&ota_xport, &ota_xport_ctx);
     ota_xport_ctx.uart = &uart;
     ota_xport_init(&ota_xport);
-
     ota_client_init(&ota_client, &ota_xport);
+    ota_client.ext_flash = &spiflash;  /* 外置 Flash 做安全缓冲区 */
     ota_client_start(&ota_client);
+
+    cli_printf(c, "Starting OTA firmware update...\r\n");
+    cli_printf(c, "Send firmware now (60s timeout, ESC to cancel)...\r\n");
+    cli_printf(c, "  60s remaining...\r\n");
 
     /* 倒计时: 前55s每5s提醒, 最后5s每秒提醒, ESC 取消 */
     uint32_t data_tick     = xTaskGetTickCount();
     uint32_t last_sec      = 0;
-    cli_printf(c, "  60s remaining...\r\n");
     int last_pct = -1;
     bool esc_pressed = false;
 
@@ -352,7 +352,7 @@ static const CLICommand commands[] = {
     { "btn",         cmd_btn,         "Read button state (PB14)" },
     { "flash-id",    cmd_flash_id,    "Read SPI Flash JEDEC ID" },
     { "info",        cmd_info,        "Show system information" },
-    { "uptime",      cmd_uptime,      "Show system uptime" },
+    { "runtime",     cmd_uptime,      "Show system runtime" },
     { "reset",       cmd_reset,       "Software reset MCU" },
     { "ota-start",   cmd_ota_start,   "Start OTA firmware update" },
     { "ota-status",  cmd_ota_status,  "Show OTA update status" },

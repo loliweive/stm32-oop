@@ -1,214 +1,178 @@
 /**
- * @file    main.c
- * @brief   OTA Bootloader — 固件更新入口
- *
- * 启动流程:
- *   1. 检查 OTA Metadata 是否有已验证的固件 → 直接跳转
- *   2. 等待 UART 上是否有 OTA HELLO 帧 (3 秒超时)
- *      - 有 → 进入固件接收模式 (ota_client)
- *      - 无 → 检查是否有旧固件可跳转, 否则死循环等待 OTA
- *
- * 构建: cmake -B build/bootloader -DBUILD_MODE=bootloader
- * 烧录: openocd ... -c "program build/bootloader/stm32-oop.elf verify reset exit"
- *
- * Bootloader 占用 Flash 0x08000000 - 0x08002000 (8KB)
- * 应用固件从 0x08002000 开始
+ * @brief  OTA Bootloader — 最小跳转 + 外部 Flash 恢复 + UART OTA
  */
-
 #include "stm32f103xb.h"
 #include "ota_config.h"
 #include "ota_flash.h"
 #include "ota_transport.h"
 #include "ota_transport_uart.h"
 #include "ota_client.h"
+#include "spi_flash.h"
 #include "gpio.h"
 #include "rcc.h"
+#include <string.h>
 
-/* ── UART 传输上下文 (静态分配) ──────────────────────────────── */
 static UartXportCtx uart_ctx;
 static OtaTransport transport;
 static OtaClient    ota;
+static GpioPin      led;
+static uint8_t      recovery_buf[1024];
 
-/* ── LED 指示 ─────────────────────────────────────────────────── */
-static GpioPin led;
-
-static void led_init(void)
-{
+static void led_init(void) {
     rcc_enable_gpio('C');
     GpioPin_ctor(&led, GPIOC, GPIO_PIN_13);
     gpio_set_mode(&led, GPIO_MODE_OUT_PP);
 }
-
-static void led_on(void)  { gpio_set(&led, 0); } /* PC13: 低电平点亮 */
+static void led_on(void)  { gpio_set(&led, 0); }
 static void led_off(void) { gpio_set(&led, 1); }
 
-/** 快速闪烁: 错误指示 */
-static void led_error(void)
-{
-    for (int i = 0; i < 10; i++) {
-        led_on();  for (volatile int d = 0; d < 200000; d++) {}
-        led_off(); for (volatile int d = 0; d < 200000; d++) {}
-    }
-}
-
-/* ── 固件跳转 ─────────────────────────────────────────────────── */
-/**
- * @brief 跳转到应用固件
- *
- * 1. 设置向量表偏移为应用起始地址
- * 2. 从应用向量表读取初始 SP 和 PC
- * 3. 设置 MSP, 跳转到 Reset_Handler
- *
- * 此函数不应返回。
- */
-static void jump_to_application(uint32_t app_addr) __attribute__((noreturn));
-
-static void jump_to_application(uint32_t app_addr)
-{
-    uint32_t *vector_table = (uint32_t *)app_addr;
-
-    /* 检查栈顶地址是否在 SRAM 范围内 (0x20000000 - 0x20005000 for 20KB) */
-    uint32_t sp = vector_table[0];
-    if (sp < 0x20000000 || sp > 0x20005000) {
-        /* 无效的向量表 — 可能没有固件, 死循环等待 */
-        while (1) { __asm__ volatile("nop"); }
-    }
-
-    uint32_t pc = vector_table[1];
-
-    /* 关闭所有中断 */
+static void jump_to_app(uint32_t addr) __attribute__((noreturn));
+static void jump_to_app(uint32_t addr) {
+    uint32_t *vec = (uint32_t *)addr;
+    uint32_t sp = vec[0], pc = vec[1];
+    if (sp < 0x20000000 || sp > 0x20005000) while(1) {}
     __disable_irq();
-
-    /* 设置向量表偏移 */
-    SCB_VTOR = app_addr;
-
-    /* 设置主栈指针 */
+    SCB_VTOR = addr;
     __asm__ volatile("msr msp, %0" : : "r"(sp));
-
-    /* 跳转到应用 Reset_Handler */
-    void (*app_reset)(void) = (void (*)(void))pc;
-    app_reset();
-
-    /* 不应到达 */
-    while (1) {}
+    ((void (*)(void))pc)();
+    while(1) {}
 }
 
-/* ── 进度回调 ─────────────────────────────────────────────────── */
-static void on_ota_progress(uint32_t received, uint32_t total)
-{
-    /* 接收过程中快速闪烁 LED */
-    static int toggle = 0;
-    toggle = !toggle;
-    if (toggle) led_on(); else led_off();
-    (void)received; (void)total;
+/* ── 精简 OLED 错误显示 ──────────────────────── */
+static void oled_write(uint8_t *buf, int len) {
+    I2C_Type *i=I2C1; uint32_t to;
+    i->CR1|=I2C_CR1_START; to=100000; while(!(i->SR1&I2C_SR1_SB)&&--to){}
+    i->DR=(uint8_t)(0x3C<<1); to=100000; while(!(i->SR1&I2C_SR1_ADDR)&&--to){}
+    (void)i->SR2;
+    for(int n=0;n<len;n++){ to=100000; while(!(i->SR1&I2C_SR1_TXE)&&--to){} i->DR=buf[n]; }
+    to=100000; while(!(i->SR1&I2C_SR1_BTF)&&--to){}
+    i->CR1|=I2C_CR1_STOP;
+}
+static void oled_cmd(uint8_t c) { uint8_t b[2]={0,c}; oled_write(b,2); }
+static void oled_data(const uint8_t *d, int n) {
+    for(int o=0;o<n;o+=128){ int c=(n-o>128)?128:(n-o);
+        uint8_t b[129]; b[0]=0x40; memcpy(b+1,d+o,c); oled_write(b,c+1); }
+}
+static void oled_init_show(const char *line1, const char *line2) {
+    rcc_enable_gpio('B'); rcc_enable_i2c(1);
+    { GpioPin s; GpioPin_ctor(&s,GPIOB,GPIO_PIN_6); gpio_set_mode(&s,GPIO_CNF_ALT_OD|GPIO_MODE_OUT_50MHZ);
+      GpioPin_ctor(&s,GPIOB,GPIO_PIN_7); gpio_set_mode(&s,GPIO_CNF_ALT_OD|GPIO_MODE_OUT_50MHZ); }
+    I2C1->CR1|=I2C_CR1_SWRST; I2C1->CR1&=~I2C_CR1_SWRST;
+    I2C1->CR2=36; I2C1->CCR=180; I2C1->TRISE=37; I2C1->CR1|=I2C_CR1_PE;
+    uint8_t c[]={0xAE,0x20,0x02,0xA8,0x3F,0xD3,0x00,0x40,0xA1,0xC8,
+      0xDA,0x12,0x81,0xCF,0xD9,0xF1,0xDB,0x30,0xA4,0xA6,0x8D,0x14};
+    for(int i=0;i<(int)sizeof(c);i++) oled_cmd(c[i]);
+    /* 清屏 */
+    uint8_t z[128]; memset(z,0,128);
+    for(int p=0;p<8;p++){ oled_cmd(0xB0|p); oled_cmd(0); oled_cmd(0x10); oled_data(z,128); }
+    oled_cmd(0xAF);
+
+    /* 5x7 字库 (仅需字符) */
+    static const uint8_t f[][5]={ {0},{0x7C,0x12,0x11,0x12,0x7C},
+      {0x7F,0x49,0x49,0x49,0x36},{0x3E,0x41,0x41,0x41,0x22},
+      {0x7F,0x41,0x41,0x22,0x1C},{0x7F,0x49,0x49,0x49,0x41},
+      {0x7F,0x09,0x09,0x01,0x01},{0x3E,0x41,0x49,0x49,0x7A},
+      {0x7F,0x08,0x08,0x08,0x7F},{0x00,0x41,0x7F,0x41,0x00},
+      {0x3E,0x41,0x41,0x41,0x3E},{0x7F,0x09,0x19,0x29,0x46},
+      {0x46,0x49,0x49,0x49,0x31},{0x01,0x01,0x7F,0x01,0x01},
+      {0x3F,0x40,0x40,0x40,0x3F},{0x7F,0x20,0x18,0x20,0x7F},
+      {0x20,0x54,0x54,0x54,0x78},{0x38,0x44,0x44,0x44,0x38},
+      {0x7C,0x14,0x14,0x14,0x08},{0x00,0x41,0x7F,0x40,0x00} };
+    #define IDX(c) ((c)==' '?0:(c)>='A'&&(c)<='I'?(c)-'A'+1:(c)=='O'?10:(c)=='R'?11:(c)=='S'?12:(c)=='T'?13:(c)=='U'?14:(c)=='W'?15:(c)=='a'?16:(c)=='o'?17:(c)=='p'?18:(c)=='l'?19:0)
+
+    int x1=(128-(int)strlen(line1)*6)/2, x2=(128-(int)strlen(line2)*6)/2;
+    for(const char *s=line1;*s;s++,x1+=6){ int i=IDX(*s); oled_cmd(0xB0|1);oled_cmd(x1&0xF);oled_cmd(0x10|(x1>>4));
+        uint8_t d[6]={0x40,f[i][0],f[i][1],f[i][2],f[i][3],0}; oled_write(d,6);
+        oled_cmd(0xB0|2);oled_cmd(x1&0xF);oled_cmd(0x10|(x1>>4));
+        uint8_t d2[3]={0x40,f[i][4]}; oled_write(d2,3); }
+    for(const char *s=line2;*s;s++,x2+=6){ int i=IDX(*s); oled_cmd(0xB0|4);oled_cmd(x2&0xF);oled_cmd(0x10|(x2>>4));
+        uint8_t d[6]={0x40,f[i][0],f[i][1],f[i][2],f[i][3],0}; oled_write(d,6);
+        oled_cmd(0xB0|5);oled_cmd(x2&0xF);oled_cmd(0x10|(x2>>4));
+        uint8_t d2[3]={0x40,f[i][4]}; oled_write(d2,3); }
 }
 
-/* ── 主入口 ───────────────────────────────────────────────────── */
-int main(void)
-{
-    /* 时钟: HSI 8MHz (bootloader 不需要高速) */
-    rcc_set_sysclk(RCC_HSI, 0);
+/* ── 主入口 ──────────────────────────── */
+int main(void) {
+    rcc_set_sysclk(RCC_PLL, 9);
+    led_init(); led_on();
 
-    /* LED 初始化 */
-    led_init();
-    led_on(); /* 进入 bootloader — 点亮 LED */
-
-    /* ── 检查是否有已验证的固件 ───────────────────────────── */
+    /* ① 检查 metadata */
     OtaMetadata meta;
-    ota_flash_read(OTA_METADATA_START, (uint8_t *)&meta, sizeof(meta));
-
+    ota_flash_read(OTA_METADATA_START, (uint8_t*)&meta, sizeof(meta));
     if (meta.magic == OTA_MAGIC && meta.state == OTA_STATE_VERIFIED) {
-        /* 标记为已启动 */
         meta.state = OTA_STATE_BOOTED;
-        ota_flash_init();
-        ota_flash_erase_page(OTA_METADATA_START);
-        ota_flash_write(OTA_METADATA_START, (const uint8_t *)&meta, sizeof(meta));
+        ota_flash_init(); ota_flash_erase_page(OTA_METADATA_START);
+        ota_flash_write(OTA_METADATA_START, (const uint8_t*)&meta, sizeof(meta));
         ota_flash_lock();
-
-        led_off();
-        jump_to_application(OTA_APP_START);
-        /* jump_to_application 不应返回, 如果返回说明没有有效固件 */
+        led_off(); jump_to_app(OTA_APP_START);
     }
 
-    /* ── 初始化 OTA 传输 ──────────────────────────────────── */
+    /* ② 等待 UART OTA (3秒) */
     ota_transport_uart_create(&transport, &uart_ctx);
     ota_xport_init(&transport);
-
-    /* 初始化 OTA 客户端 */
     ota_client_init(&ota, &transport);
-    ota.on_progress = on_ota_progress;
-
-    /* ── 等待 OTA HELLO: 3 秒超时 ─────────────────────────── */
-    /* 闪烁 LED 表示等待 */
-    for (int i = 0; i < 30; i++) {
+    for (int i=0;i<30;i++) {
         uint8_t buf[OTA_FRAME_MAX_SIZE];
         size_t n = ota_xport_recv(&transport, buf, sizeof(buf), 100);
+        if (n>0) { uint8_t t,s; const uint8_t *p; size_t pl;
+            if (ota_frame_decode(buf,n,&t,&s,&p,&pl) && t == OTA_CMD_HELLO) goto start_ota; }
+        if (i&1) led_on(); else led_off();
+    }
 
-        if (n > 0) {
-            uint8_t type, seq;
-            const uint8_t *payload;
-            size_t plen;
-
-            if (ota_frame_decode(buf, n, &type, &seq, &payload, &plen)) {
-                if (type == OTA_CMD_HELLO) {
-                    /* 收到 HELLO → 进入完整的 OTA 接收流程 */
-                    goto start_ota;
-                }
-            }
+    /* ③ 外部 Flash 恢复 */
+    rcc_enable_spi(1); rcc_enable_gpio('A'); rcc_enable_gpio('B');
+    { GpioPin s; GpioPin_ctor(&s,GPIOA,GPIO_PIN_5); gpio_set_mode(&s,GPIO_CNF_ALT_PP|GPIO_MODE_OUT_50MHZ);
+      GpioPin_ctor(&s,GPIOA,GPIO_PIN_6); gpio_set_mode(&s,GPIO_CNF_FLOAT|GPIO_MODE_IN);
+      GpioPin_ctor(&s,GPIOA,GPIO_PIN_7); gpio_set_mode(&s,GPIO_CNF_ALT_PP|GPIO_MODE_OUT_50MHZ);
+      GpioPin_ctor(&s,GPIOB,GPIO_PIN_9); gpio_set_mode(&s,GPIO_MODE_OUT_PP); gpio_set(&s,1); }
+    SpiFlash ext;
+    if (spi_flash_init(&ext, SPI1, GPIOB, GPIO_PIN_9)) {
+        uint32_t v[2]; spi_flash_read(&ext, 0, (uint8_t*)v, 8);
+        if (v[0]>=0x20000000 && v[0]<=0x20005000 && v[1]>=0x08000000 && v[1]<=0x08010000) {
+            uint32_t sz=0;
+            for (uint32_t o=0;o<OTA_APP_SIZE;o+=1024) {
+                spi_flash_read(&ext,o,recovery_buf,1024);
+                int ff=1; for(int i=0;i<1024;i++) if(recovery_buf[i]!=0xFF){ff=0;break;}
+                if(ff){sz=o;break;}
+            } if(!sz) sz=OTA_APP_SIZE;
+            led_on();
+            ota_flash_init(); ota_flash_erase_range(OTA_APP_START,sz);
+            for(uint32_t o=0;o<sz;o+=sizeof(recovery_buf)){
+                size_t c=sz-o; if(c>sizeof(recovery_buf))c=sizeof(recovery_buf);
+                spi_flash_read(&ext,o,recovery_buf,c);
+                ota_flash_write(OTA_APP_START+o,recovery_buf,c); }
+            OtaMetadata m; memset(&m,0,sizeof(m));
+            m.magic=OTA_MAGIC; m.firmware_size=sz; m.state=OTA_STATE_VERIFIED;
+            ota_flash_erase_page(OTA_METADATA_START);
+            ota_flash_write(OTA_METADATA_START,(const uint8_t*)&m,sizeof(m));
+            ota_flash_lock();
+            led_off(); jump_to_app(OTA_APP_START);
         }
-
-        /* 交替 LED */
-        if (i & 1) led_on(); else led_off();
     }
 
-    /* ── 超时: 检查是否有旧固件可跳转 ───────────────────── */
-    if (meta.magic == OTA_MAGIC && meta.state == OTA_STATE_BOOTED) {
-        /* 之前已启动过的固件 — 直接跳转 */
-        led_off();
-        jump_to_application(OTA_APP_START);
-    }
+    /* ④ 旧固件 */
+    if (meta.magic == OTA_MAGIC && meta.state == OTA_STATE_BOOTED)
+        { led_off(); jump_to_app(OTA_APP_START); }
 
-    /* 没有固件 — 等待 OTA (永不超时, 持续等待) */
-    led_error();
-    goto wait_forever;
+    /* ⑤ 直接向量表检查 */
+    { uint32_t *av=(uint32_t*)OTA_APP_START;
+      if (av[0]>=0x20000000 && av[0]<=0x20005000 && av[1]>=0x08000000 && av[1]<=0x08010000)
+          { led_off(); jump_to_app(OTA_APP_START); } }
+
+    /* ⑥ 全部失败 — OLED 报错 */
+    oled_init_show("BOOT ERROR","UART OTA");
+    led_on();
+    while(1) {
+        uint8_t b[OTA_FRAME_MAX_SIZE];
+        size_t n=ota_xport_recv(&transport,b,sizeof(b),1000);
+        if(n>0){uint8_t t,s;const uint8_t*p;size_t pl;
+            if(ota_frame_decode(b,n,&t,&s,&p,&pl)&&t==OTA_CMD_HELLO) goto start_ota;}
+    }
 
 start_ota:
-    led_on();
-    ota_client_start(&ota);
-
-    /* ── OTA 接收循环 ────────────────────────────────────── */
-    while (ota_client_poll(&ota)) {
-        /* 持续驱动状态机 */
-    }
-
-    if (ota_client_get_state(&ota) == OTA_STATE_COMPLETE) {
-        /* 完成 → 软复位, 让 bootloader 二次启动后检测并跳转 */
-        ota_client_boot(&ota);
-    } else {
-        /* 出错 → 错误指示, 等待重试 */
-        led_error();
-        goto wait_forever;
-    }
-
-wait_forever:
-    /* 持续等待 OTA HELLO */
-    while (1) {
-        uint8_t buf[OTA_FRAME_MAX_SIZE];
-        size_t n = ota_xport_recv(&transport, buf, sizeof(buf), 1000);
-        if (n > 0) {
-            uint8_t type, seq;
-            const uint8_t *payload;
-            size_t plen;
-            if (ota_frame_decode(buf, n, &type, &seq, &payload, &plen)
-                && type == OTA_CMD_HELLO) {
-                ota_client_start(&ota);
-                while (ota_client_poll(&ota)) {}
-                if (ota_client_get_state(&ota) == OTA_STATE_COMPLETE) {
-                    ota_client_boot(&ota);
-                }
-            }
-        }
-    }
-
-    return 0;
+    led_on(); ota_client_start(&ota);
+    while(ota_client_poll(&ota)){}
+    if (ota_client_get_state(&ota) == OTA_STATE_COMPLETE) ota_client_boot(&ota);
+    led_off(); while(1){ led_on(); for(volatile int i=0;i<500000;i++)__asm__("nop");
+                          led_off(); for(volatile int i=0;i<500000;i++)__asm__("nop"); }
 }

@@ -50,6 +50,7 @@ typedef struct {
     uint32_t       received_bytes;  /* 已接收字节数 */
     uint8_t        error_code;      /* 最后一次错误码 */
     uint8_t        retry_count;     /* 当前重试次数 */
+    void          *ext_flash;       /* 外置 Flash (SpiFlash*), NULL=直写内部 */
 
     /* 回调 */
     void (*on_progress)(uint32_t received, uint32_t total); /* 进度回调 */

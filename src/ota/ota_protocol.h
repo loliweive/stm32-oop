@@ -104,6 +104,9 @@ uint16_t ota_crc16(const uint8_t *data, size_t len);
 /** 构建 HELLO 请求帧 */
 size_t ota_build_hello(uint8_t *buf, size_t buf_size, uint8_t seq);
 
+/** 构建 HELLO_ACK 应答帧 (含固件大小) */
+size_t ota_build_hello_ack(uint8_t *buf, size_t buf_size, uint8_t seq, uint32_t fw_size);
+
 /** 构建 DATA 帧 (固件数据块) */
 size_t ota_build_data(uint8_t *buf, size_t buf_size, uint8_t seq,
                       const uint8_t *data, size_t data_len);

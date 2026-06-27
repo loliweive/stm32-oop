@@ -136,8 +136,18 @@ size_t ota_build_hello(uint8_t *buf, size_t buf_size, uint8_t seq)
     payload[0] = OTA_PROTOCOL_VERSION;
     payload[1] = (uint8_t)(OTA_MAX_PAYLOAD_SIZE & 0xFF);
     payload[2] = (uint8_t)((OTA_MAX_PAYLOAD_SIZE >> 8) & 0xFF);
-    payload[3] = (uint8_t)(OTA_APP_SIZE & 0xFF); /* low byte of max app size */
+    payload[3] = (uint8_t)(OTA_APP_SIZE & 0xFF);
     return ota_frame_encode(buf, buf_size, OTA_CMD_HELLO, seq, payload, 4);
+}
+
+size_t ota_build_hello_ack(uint8_t *buf, size_t buf_size, uint8_t seq, uint32_t fw_size)
+{
+    uint8_t payload[4];
+    payload[0] = (uint8_t)(fw_size & 0xFF);
+    payload[1] = (uint8_t)((fw_size >> 8) & 0xFF);
+    payload[2] = (uint8_t)((fw_size >> 16) & 0xFF);
+    payload[3] = (uint8_t)((fw_size >> 24) & 0xFF);
+    return ota_frame_encode(buf, buf_size, OTA_CMD_HELLO_ACK, seq, payload, 4);
 }
 
 size_t ota_build_data(uint8_t *buf, size_t buf_size, uint8_t seq,
