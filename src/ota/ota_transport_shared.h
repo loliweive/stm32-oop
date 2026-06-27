@@ -18,6 +18,7 @@
 
 typedef struct {
     UartPort *uart;
+    bool      cancelled;   /**< ESC 取消标志 — 由 _recv 设置, 主循环检查 */
 } SharedXportCtx;
 
 /** 创建共享 UART 传输 — 不创建新的 GPIO/UART, 复用已有 */

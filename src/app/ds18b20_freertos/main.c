@@ -238,9 +238,12 @@ static void cmd_ota_start(CLI *c, int argc, char **argv)
     }
 
     cli_printf(c, "Starting OTA firmware update...\r\n");
-    cli_printf(c, "Send firmware now (60s timeout)...\r\n\r\n");
+    cli_printf(c, "Send firmware now (60s timeout, do not type)...\r\n\r\n");
 
     ota_in_progress = true;
+
+    /* 排空 UART RX — 避免之前按键干扰 OTA 协议 */
+    { uint8_t _dummy; while (uart_recv(&uart, &_dummy)) {} }
 
     /* 初始化 OTA (复用当前 UART) */
     ota_transport_shared_create(&ota_xport, &ota_xport_ctx);
@@ -250,35 +253,38 @@ static void cmd_ota_start(CLI *c, int argc, char **argv)
     ota_client_init(&ota_client, &ota_xport);
     ota_client_start(&ota_client);
 
-    /* 超时控制: 每轮 ~135ms (recv 125ms + delay 10ms), 450 轮 ≈ 60s */
-    uint32_t timeout_rounds = 450;
-    uint32_t idle_rounds    = 0;
+    /* 倒计时: 前55s每5s提醒, 最后5s每秒提醒, ESC 取消 */
+    uint32_t data_tick     = xTaskGetTickCount();
+    uint32_t last_sec      = 0;
+    cli_printf(c, "  60s remaining...\r\n");
     int last_pct = -1;
-    uint8_t last_remaining = 99;
+    bool esc_pressed = false;
 
     while (ota_client_poll(&ota_client)) {
+        /* ESC 取消 */
+        if (ota_xport_ctx.cancelled) { esc_pressed = true; break; }
         if (ota_client_get_state(&ota_client) >= OTA_STATE_RECEIVING) {
-            idle_rounds = 0;
+            data_tick = xTaskGetTickCount();
             int pct = ota_client_get_progress(&ota_client);
-            if (pct != last_pct) {
-                cli_printf(c, "  Progress: %d%%\r\n", pct);
-                last_pct = pct;
-            }
+            if (pct != last_pct) { cli_printf(c, "  %d%%\r\n", pct); last_pct = pct; }
         } else {
-            idle_rounds++;
-            uint8_t remaining = (uint8_t)((timeout_rounds - idle_rounds) / 7);  /* 7轮≈1s */
-            if (remaining < last_remaining) {
-                cli_printf(c, "  Waiting... ~%ds\r\n", remaining);
-                last_remaining = remaining;
+            uint32_t sec = (xTaskGetTickCount() - data_tick) / configTICK_RATE_HZ;
+            uint32_t remaining = 60 - sec;
+            if (sec > last_sec) {
+                last_sec = sec;
+                if (remaining <= 5 || remaining % 5 == 0)
+                    cli_printf(c, "  %lus remaining...\r\n", (unsigned long)remaining);
             }
-            if (idle_rounds >= timeout_rounds) break;
+            if (sec >= 60) break;
         }
         vTaskDelay(pdMS_TO_TICKS(10));
     }
 
     if (ota_client_get_state(&ota_client) != OTA_STATE_COMPLETE) {
-        cli_printf(c, "\r\nOTA timeout — no data received. Cancelled.\r\n");
+        cli_printf(c, "\r\n%s\r\n", esc_pressed ? "OTA cancelled (ESC)." : "OTA timeout.");
+        { uint8_t _dummy; while (uart_recv(&uart, &_dummy)) {} }
         ota_in_progress = false;
+        ota_xport_ctx.cancelled = false;
         cli_prompt(c);
         return;
     }

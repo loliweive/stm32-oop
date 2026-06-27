@@ -28,7 +28,7 @@
 #define xPortSysTickHandler     SysTick_Handler
 
 /* ── 时钟 ──────────────────────────────────────────────────── */
-#define configCPU_CLOCK_HZ                      (8000000UL)  /* HSI 8MHz — must match actual clock! */
+#define configCPU_CLOCK_HZ                      (72000000UL)  /* 72MHz PLL — must match actual clock! */
 #define configTICK_RATE_HZ                      ((TickType_t)1000)  /* 1ms tick */
 
 /* ── Tick 类型 ──────────────────────────────────────────────── */
@@ -43,7 +43,7 @@
 #define configIDLE_SHOULD_YIELD                 1
 
 /* ── 内存 ──────────────────────────────────────────────────── */
-#define configTOTAL_HEAP_SIZE                   ((size_t)(6 * 1024)) /* 6KB heap — enough for CLI + idle */
+#define configTOTAL_HEAP_SIZE                   ((size_t)(8 * 1024)) /* 8KB heap — CLI 6KB + idle 512B + TCBs */
 #define configSUPPORT_DYNAMIC_ALLOCATION        1
 #define configSUPPORT_STATIC_ALLOCATION         0
 

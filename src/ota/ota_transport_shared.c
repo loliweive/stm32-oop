@@ -24,10 +24,10 @@ static size_t _recv(OtaTransport *self, uint8_t *buf, size_t max_len, uint32_t t
     while (n < max_len && elapsed < timeout_ms) {
         uint8_t byte;
         if (uart_recv(c->uart, &byte)) {
+            if (byte == 0x1B) { c->cancelled = true; return 0; }  /* ESC → 取消 */
             buf[n++] = byte;
             elapsed = 0;
         } else {
-            /* 简易延时: 轮询 1000 次 ≈ 1ms @72MHz (volatile loop ~12cyc/iter) */
             for (volatile int i = 0; i < 6000; i++) __asm__("nop");
             elapsed++;
         }
