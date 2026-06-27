@@ -13,13 +13,12 @@ static bool _read(Sensor *base, float *lux_pct, uint8_t *digital)
 {
     LightSensor *self = (LightSensor *)base;
 
-    /* ── 模拟量: ADC 读 PA3 ───────────────────────────── */
+    /* ── 模拟量: ADC 读 PA3 (不重新初始化, _init 已做) ── */
     AdcPort adc_port;
     AdcPort_ctor(&adc_port, self->adc);
-    adc_init(&adc_port);
+    /* adc_init 只在 _init 调用一次, 这里直接读 */
 
     uint16_t raw = adc_read(&adc_port, self->adc_channel);
-    /* 12-bit ADC: 0=0V(最暗) ~ 4095=3.3V(最亮) → 百分比 */
     self->lux_pct = (float)raw * 100.0f / 4095.0f;
 
     /* ── 数字量: GPIO 读 PB11 ─────────────────────────── */

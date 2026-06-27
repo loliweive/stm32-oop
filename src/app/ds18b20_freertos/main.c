@@ -22,6 +22,7 @@
 #include "ota_transport_shared.h"
 #include <stdio.h>
 #include <string.h>
+#include <stdlib.h>
 
 /* ═══════════════════════════════════════════════════════════════
  *  传感器选型 — 改这一行即可切换!
@@ -123,13 +124,13 @@ static void cmd_temp(CLI *c, int argc, char **argv)
     if (xQueueReceive(temp_queue, &r, 0) == pdTRUE) {
         if (r.valid) {
             if (r.humidity != 255) {
-                cli_printf(c, "%s: %+5.1f C  %2u %%RH  (t=%lus)\r\n",
-                           sensor_name(sensor), (double)r.temp_c,
+                cli_printf(c, "%s: %+d.%d C  %2u %%RH  (t=%lus)\r\n",
+                           sensor_name(sensor), (int)r.temp_c, abs((int)((r.temp_c-(int)r.temp_c)*10)),
                            (unsigned)r.humidity,
                            (unsigned long)(r.timestamp_ms / 1000));
             } else {
-                cli_printf(c, "%s: %+5.1f C  (t=%lus)\r\n",
-                           sensor_name(sensor), (double)r.temp_c,
+                cli_printf(c, "%s: %+d.%d C  (t=%lus)\r\n",
+                           sensor_name(sensor), (int)r.temp_c, abs((int)((r.temp_c-(int)r.temp_c)*10)),
                            (unsigned long)(r.timestamp_ms / 1000));
             }
         } else {
@@ -168,8 +169,10 @@ static void cmd_light(CLI *c, int argc, char **argv) {
     (void)argc; (void)argv;
     float lux; uint8_t dout;
     if (sensor_read(light_sensor, &lux, &dout)) {
-        cli_printf(c, "Light(M7): %5.1f %%  DO=%u  (PA3+PB11)\r\n",
-                   (double)lux, (unsigned)dout);
+        int pct = (int)lux;
+        int frac = (int)((lux - pct) * 10);
+        cli_printf(c, "Light(M7): %d.%d %%  DO=%u  (PA3+PB11)\r\n",
+                   pct, frac, (unsigned)dout);
     } else {
         cli_printf(c, "Light sensor read failed\r\n");
     }
@@ -460,15 +463,15 @@ static void task_sensor(void *params)
         /* 刷新 OLED 显示 */
         if (r.valid) {
             char l1[22], l2[22];
-            snprintf(l1, sizeof(l1), "%.1f C",
-                     (double)r.temp_c);
+            snprintf(l1, sizeof(l1), "%d.%d C",
+                     (int)r.temp_c, abs((int)((r.temp_c-(int)r.temp_c)*10)));
             snprintf(l2, sizeof(l2), "%s",
                      r.humidity != 255
                      ? ""  /* 占位 */
                      : "");
             if (r.humidity != 255) {
-                snprintf(l1, sizeof(l1), "%.1f C  %u%%RH",
-                         (double)r.temp_c, (unsigned)r.humidity);
+                snprintf(l1, sizeof(l1), "%d.%d C  %u%%RH",
+                         (int)r.temp_c, abs((int)((r.temp_c-(int)r.temp_c)*10)), (unsigned)r.humidity);
                 snprintf(l2, sizeof(l2), "%s", sensor_name(sensor));
             } else {
                 snprintf(l2, sizeof(l2), "%s", sensor_name(sensor));
@@ -487,14 +490,14 @@ static void task_sensor(void *params)
 
         if (stream_mode && r.valid) {
             if (r.humidity != 255) {
-                cli_printf(&cli, "[%6lus] %+5.1f C  %2u %%RH  (%s)\r\n",
+                cli_printf(&cli, "[%6lus] %+d.%d C  %2u %%RH  (%s)\r\n",
                            (unsigned long)(r.timestamp_ms / 1000),
-                           (double)r.temp_c, (unsigned)r.humidity,
+                           (int)r.temp_c, abs((int)((r.temp_c-(int)r.temp_c)*10)), (unsigned)r.humidity,
                            sensor_name(sensor));
             } else {
-                cli_printf(&cli, "[%6lus] %+5.1f C  (%s)\r\n",
+                cli_printf(&cli, "[%6lus] %+d.%d C  (%s)\r\n",
                            (unsigned long)(r.timestamp_ms / 1000),
-                           (double)r.temp_c, sensor_name(sensor));
+                           (int)r.temp_c, abs((int)((r.temp_c-(int)r.temp_c)*10)), sensor_name(sensor));
             }
         }
         vTaskDelay(pdMS_TO_TICKS(2000));
