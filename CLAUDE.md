@@ -215,6 +215,32 @@ TOKEN=$(gh auth token) && \
 - [ ] 看门狗 (IWDG)
 - [ ] 低功耗模式实验
 
+## 13. 外设测试固件
+
+每个外设一份独立测试固件, 用于快速验证硬件是否正常。
+位于 `tests/peripheral/`, 预编译 `.bin` 在 `tests/peripheral/bin/`。
+
+```bash
+# 构建单个测试
+cmake -B build/peripheral_<name> -DBUILD_MODE=peripheral -DPERIPHERAL=<name>
+cmake --build build/peripheral_<name>
+
+# 烧录 (替换 <name>)
+openocd -f interface/stlink.cfg -f target/stm32f1x.cfg \
+  -c "program tests/peripheral/bin/test_<name>.bin 0x08000000 verify reset exit"
+```
+
+| 测试 | 文件 | 大小 | 正常表现 |
+|------|------|:--:|------|
+| LED | `test_led.bin` | 676B | PC13 以 1Hz 闪烁 |
+| UART Echo | `test_uart_echo.bin` | 376B | 串口 115200, 敲键回显 |
+| OLED | `test_oled.bin` | 13.7KB | 依次显示文本→几何→计数器 |
+| Button | `test_button.bin` | 748B | 按 PB14 → LED 亮 |
+| SPI Flash | `test_spi_flash.bin` | 1KB | LED 常亮=JEDEC ID OK, 慢闪=失败 |
+| DS18B20 | `test_ds18b20.bin` | 1.2KB | LED 常亮=传感器 OK, 慢闪=未检测到 |
+
+**规则: 新增/修改外设驱动后, 必须更新对应的测试固件并重新生成 .bin**
+
 ---
 
 ## 9. 已知问题 & 注意事项

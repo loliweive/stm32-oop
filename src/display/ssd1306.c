@@ -216,9 +216,10 @@ static void _ssd1306_init(OledDisplay *self)
 {
     SSD1306 *oled = _ssd(self);
 
-    /* SSD1306 初始化序列 */
+    /* SSD1306 初始化序列 (Display OFF 状态下配置) */
     uint8_t init_cmds[] = {
         0xAE,        /* Display OFF */
+        0x20, 0x02,  /* 内存寻址模式 → Page Addressing */
         0xD5, 0x80,  /* 设置显示时钟分频比/振荡器频率 */
         0xA8, 0x3F,  /* 设置多路复用率 (64) */
         0xD3, 0x00,  /* 设置显示偏移 */
@@ -232,15 +233,17 @@ static void _ssd1306_init(OledDisplay *self)
         0xA4,        /* 整个显示打开/关闭 (正常) */
         0xA6,        /* 设置正常/反色显示 (正常) */
         0x8D, 0x14,  /* 设置充电泵 (启用) */
-        0xAF,        /* Display ON */
     };
     for (size_t i = 0; i < sizeof(init_cmds); i++) {
         _send_cmd(oled, init_cmds[i]);
     }
 
-    /* 清空显存并刷新 */
+    /* 先清空 GRAM (显示仍为 OFF, 无闪烁) */
     memset(oled->framebuf, 0, sizeof(oled->framebuf));
     _ssd1306_flush(self);
+
+    /* 最后开显示 — 此时 GRAM 已全零, 纯黑屏 */
+    _send_cmd(oled, 0xAF);
 }
 
 static void _ssd1306_clear(OledDisplay *self)

@@ -11,7 +11,7 @@ if(NOT DEFINED BUILD_MODE)
     set(BUILD_MODE host)
 endif()
 
-if(BUILD_MODE STREQUAL "stm32f103" OR BUILD_MODE STREQUAL "freertos" OR BUILD_MODE STREQUAL "bootloader")
+if(BUILD_MODE STREQUAL "stm32f103" OR BUILD_MODE STREQUAL "freertos" OR BUILD_MODE STREQUAL "bootloader" OR BUILD_MODE STREQUAL "peripheral")
     set(CMAKE_TOOLCHAIN_FILE
         "${CMAKE_CURRENT_LIST_DIR}/cmake/toolchain-arm-none-eabi.cmake"
         CACHE STRING "" FORCE)
@@ -230,6 +230,94 @@ elseif(BUILD_MODE STREQUAL "bootloader")
         COMMENT "Generating .bin / .hex / size report"
     )
 
+# ── Peripheral test mode ──────────────────────────────────────────
+elseif(BUILD_MODE STREQUAL "peripheral")
+    if(NOT DEFINED PERIPHERAL)
+        message(FATAL_ERROR "PERIPHERAL is required. Usage: cmake -B build -DBUILD_MODE=peripheral -DPERIPHERAL=led")
+    endif()
+
+    message(STATUS "=== BUILD MODE: STM32F103C8T6 Peripheral Test: ${PERIPHERAL} ===")
+
+    set(LINKER_SCRIPT "${CMAKE_SOURCE_DIR}/linker/stm32f103c8.ld")
+    set(STM32_SRC_DIR "${CMAKE_SOURCE_DIR}/src")
+    set(TEST_SRC_DIR  "${CMAKE_SOURCE_DIR}/tests/peripheral")
+
+    set(PERIPHERAL_INCLUDES
+        "${CMAKE_SOURCE_DIR}/lib/cmsis"
+        "${CMAKE_SOURCE_DIR}/lib/stm32f1"
+        "${STM32_SRC_DIR}/core"
+        "${STM32_SRC_DIR}/hal"
+        "${STM32_SRC_DIR}/utils"
+        "${STM32_SRC_DIR}/display"
+    )
+
+    # Common sources for all peripheral tests
+    set(PERIPHERAL_COMMON_SRC
+        ${STM32_SRC_DIR}/startup/startup_stm32f103c8.s
+        ${STM32_SRC_DIR}/startup/system_stm32f1.c
+        ${STM32_SRC_DIR}/hal/gpio.c
+        ${STM32_SRC_DIR}/hal/rcc.c
+    )
+
+    # Per-peripheral extra sources (declared before add_executable)
+    set(PERIPHERAL_EXTRA_SRC "")
+
+    if(PERIPHERAL STREQUAL "led")
+        # LED only needs gpio+rcc — no extra sources
+    elseif(PERIPHERAL STREQUAL "uart_echo")
+        # Pure raw register — no extra sources needed
+    elseif(PERIPHERAL STREQUAL "oled")
+        list(APPEND PERIPHERAL_EXTRA_SRC
+            ${STM32_SRC_DIR}/hal/i2c.c
+            ${STM32_SRC_DIR}/display/ssd1306.c
+            ${STM32_SRC_DIR}/display/font8x16.c
+            ${STM32_SRC_DIR}/display/font6x8.c
+            ${STM32_SRC_DIR}/display/font16x16.c
+            ${STM32_SRC_DIR}/utils/delay.c
+        )
+    elseif(PERIPHERAL STREQUAL "button")
+        # GPIO only
+    elseif(PERIPHERAL STREQUAL "spi_flash")
+        list(APPEND PERIPHERAL_EXTRA_SRC
+            ${STM32_SRC_DIR}/hal/spi.c
+        )
+    elseif(PERIPHERAL STREQUAL "ds18b20")
+        # Pure GPIO bit-bang — no extra sources
+    else()
+        message(FATAL_ERROR "Unknown PERIPHERAL: '${PERIPHERAL}'. Valid: led, uart_echo, oled, button, spi_flash, ds18b20")
+    endif()
+
+    add_executable(${PROJECT_NAME}
+        ${PERIPHERAL_COMMON_SRC}
+        ${PERIPHERAL_EXTRA_SRC}
+        ${TEST_SRC_DIR}/test_${PERIPHERAL}.c
+    )
+
+    target_include_directories(${PROJECT_NAME} PRIVATE ${PERIPHERAL_INCLUDES})
+
+    target_compile_options(${PROJECT_NAME} PRIVATE
+        -mcpu=cortex-m3 -mthumb -mfloat-abi=soft
+        -Os -g3 -Wall -Wextra
+        -ffunction-sections -fdata-sections -fno-common
+    )
+
+    target_link_options(${PROJECT_NAME} PRIVATE
+        -mcpu=cortex-m3 -mthumb -mfloat-abi=soft
+        -Wl,--gc-sections
+        -T "${LINKER_SCRIPT}"
+    )
+
+    target_link_libraries(${PROJECT_NAME} PRIVATE m)
+
+    target_compile_definitions(${PROJECT_NAME} PRIVATE STM32F103xB)
+
+    add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
+        COMMAND arm-none-eabi-objcopy -O binary $<TARGET_FILE:${PROJECT_NAME}>
+                "${TEST_SRC_DIR}/bin/test_${PERIPHERAL}.bin"
+        COMMAND arm-none-eabi-size $<TARGET_FILE:${PROJECT_NAME}>
+        COMMENT "Saved: tests/peripheral/bin/test_${PERIPHERAL}.bin"
+    )
+
 else()
-    message(FATAL_ERROR "Unknown BUILD_MODE: '${BUILD_MODE}'. Use 'host', 'stm32f103', 'freertos', or 'bootloader'.")
+    message(FATAL_ERROR "Unknown BUILD_MODE: '${BUILD_MODE}'. Use 'host', 'stm32f103', 'freertos', 'bootloader', or 'peripheral'.")
 endif()

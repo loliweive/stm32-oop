@@ -36,6 +36,7 @@
 #include "dht11.h"
 #include "light_sensor.h"
 #include "ssd1306.h"
+#include "oled.h"
 #include "i2c.h"
 #include "spi_flash.h"
 
@@ -359,7 +360,14 @@ static void task_sensor(void *params)
             } else {
                 snprintf(l2, sizeof(l2), "%s", sensor_name(sensor));
             }
-            ssd1306_show_sensor(&oled, "STM32 Sensor", l1, l2);
+            {
+                OledDisplay *d = &oled.base;
+                oled_clear(d);
+                oled_show_string(d, 0,  0, "STM32 Sensor", OLED_FONT_8X16);
+                oled_show_string(d, 0, 16, l1, OLED_FONT_8X16);
+                oled_show_string(d, 0, 32, l2, OLED_FONT_6X8);
+                oled_flush(d);
+            }
         }
 
         gpio_set(&led, 1);
@@ -427,23 +435,34 @@ static void task_cli(void *params)
 /* ═══════════════════════════════════════════════════════════════
  *  main — 初始化, 创建任务, 启动调度器
  * ═══════════════════════════════════════════════════════════════ */
+
+/* Raw UART for early boot diagnostics */
+static void _dputc(char c) { while(!(USART1->SR&(1<<7))){} USART1->DR=c; }
+static void _dputs(const char *s) { while(*s) _dputc(*s++); }
+#define DLOG(msg) do { _dputs("\r\n" msg); } while(0)
+
 int main(void)
 {
-    rcc_set_sysclk(RCC_HSI, 0);  /* 8MHz internal — no external crystal needed */
-    rcc_enable_gpio('A');
-    rcc_enable_gpio('C');
-    rcc_enable_usart(1);
+    rcc_set_sysclk(RCC_HSI, 0);
+    rcc_enable_gpio('A'); rcc_enable_gpio('C'); rcc_enable_usart(1);
+
+    /* Raw UART init for diagnostics */
+    GPIOA->CRH = (GPIOA->CRH & ~(0xF<<4)) | (0xB<<4); /* PA9 TX */
+    USART1->BRR = 69; USART1->CR1 = (1<<13)|(1<<3);
+    DLOG("CP0: boot");
 
     /* 初始化 LED (PC13) */
     GpioPin_ctor(&led, GPIOC, GPIO_PIN_13);
     gpio_set_mode(&led, GPIO_MODE_OUT_PP);
     gpio_set(&led, 1);
+    DLOG("CP1: LED ok");
 
     /* 初始化按键 (PB14, 上拉 — 按下=低电平) */
     rcc_enable_gpio('B');
     GpioPin_ctor(&btn, GPIOB, GPIO_PIN_14);
     gpio_set_mode(&btn, GPIO_CNF_PP | GPIO_MODE_IN);
     gpio_set(&btn, 1);
+    DLOG("CP2: BTN ok");
 
     /* 初始化 OLED (PB6=SCL, PB7=SDA, I2C1) */
     rcc_enable_i2c(1);
@@ -458,10 +477,20 @@ int main(void)
         I2cPort_ctor(&i2c_port, OLED_I2C, 400000, 8000000);  /* 400kHz @ 8MHz HSI */
         i2c_init(&i2c_port);
     }
-    ssd1306_init(&oled, OLED_I2C, OLED_ADDR);
-    ssd1306_show_sensor(&oled, "STM32-oop", "OLED Ready", "PB6/PB7 I2C");
+    ssd1306_ctor(&oled, OLED_I2C, OLED_ADDR);
+    {
+        OledDisplay *d = &oled.base;
+        oled_init(d);
+        oled_clear(d);
+        oled_show_string(d, 0,  0, "STM32-oop", OLED_FONT_8X16);
+        oled_show_string(d, 0, 16, "OLED Ready", OLED_FONT_8X16);
+        oled_show_string(d, 0, 32, "PB6/PB7 I2C", OLED_FONT_6X8);
+        oled_flush(d);
+    }
+    DLOG("CP3: OLED ok");
 
-    /* 初始化 SPI Flash (PA5=SCK, PA6=MISO, PA7=MOSI, PB9=CS) */
+    /* 初始化 SPI Flash — skip if not connected */
+#if 0
     rcc_enable_spi(1);
     {
         GpioPin sck, miso, mosi;
@@ -473,16 +502,21 @@ int main(void)
         gpio_set_mode(&mosi, GPIO_CNF_ALT_PP | GPIO_MODE_OUT_50MHZ);
     }
     spi_flash_init(&spiflash, SPI1, GPIOB, GPIO_PIN_9);
+    DLOG("CP4: SPI ok");
+#endif
 
     /* 创建温度数据队列 */
     temp_queue = xQueueCreate(1, sizeof(TempReading));
     configASSERT(temp_queue != NULL);
+    DLOG("CP5: Q ok");
 
     /* 创建任务 */
     xTaskCreate(task_sensor,  "Sensor", 128, NULL, 2, NULL);
     xTaskCreate(task_cli,     "CLI",    512, NULL, 1, NULL);
+    DLOG("CP6: tasks ok");
 
     vTaskStartScheduler();
+    DLOG("CP7: NEVER");  /* should never reach */
     while (1) {}
     return 0;
 }
