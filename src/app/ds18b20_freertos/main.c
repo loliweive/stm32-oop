@@ -294,6 +294,23 @@ static void cmd_ota_start(CLI *c, int argc, char **argv)
     /* 不应到达 — boot 导致软复位 */
 }
 
+static void cmd_oled(CLI *c, int argc, char **argv)
+{
+    (void)argc; (void)argv;
+    OledDisplay *d = &oled.base;
+    oled_clear(d);
+    oled_show_string(d, 0,  0, "STM32-oop", OLED_FONT_8X16);
+    oled_show_string(d, 0, 16, "FreeRTOS+CLI", OLED_FONT_8X16);
+    oled_show_string(d, 0, 32, sensor_name(sensor), OLED_FONT_6X8);
+    const SpiFlashInfo *fi = spi_flash_get_info(&spiflash);
+    char buf[32];
+    int n = snprintf(buf, sizeof(buf), "%s %luKB", fi->name, (unsigned long)(fi->capacity/1024));
+    oled_show_string(d, 0, 42, buf, OLED_FONT_6X8);
+    oled_show_string(d, 0, 52, "Type help for CLI", OLED_FONT_6X8);
+    oled_flush(d);
+    cli_printf(c, "OLED updated.\r\n");
+}
+
 static void cmd_ota_status(CLI *c, int argc, char **argv)
 {
     (void)argc; (void)argv;
@@ -345,17 +362,18 @@ static void cmd_reset(CLI *c, int argc, char **argv)
 /* ── 命令表 (NULL 终止) ──────────────────────────────────────── */
 static const CLICommand commands[] = {
     { "help",        cmd_help,        "Show this help" },
-    { "temp",        cmd_temp,        "Read temperature once" },
-    { "temp-stream", cmd_temp_stream, "Start continuous temp output" },
-    { "temp-stop",   cmd_temp_stop,   "Stop continuous temp output" },
-    { "led",         cmd_led,         "Control LED: on|off|toggle" },
     { "btn",         cmd_btn,         "Read button state (PB14)" },
     { "flash-id",    cmd_flash_id,    "Read SPI Flash JEDEC ID" },
     { "info",        cmd_info,        "Show system information" },
-    { "runtime",     cmd_uptime,      "Show system runtime" },
-    { "reset",       cmd_reset,       "Software reset MCU" },
+    { "led",         cmd_led,         "Control LED: on|off|toggle" },
+    { "oled",        cmd_oled,        "Show system info on OLED" },
     { "ota-start",   cmd_ota_start,   "Start OTA firmware update" },
     { "ota-status",  cmd_ota_status,  "Show OTA update status" },
+    { "reset",       cmd_reset,       "Software reset MCU" },
+    { "runtime",     cmd_uptime,      "Show system runtime" },
+    { "temp",        cmd_temp,        "Read temperature once" },
+    { "temp-stream", cmd_temp_stream, "Start continuous temp output" },
+    { "temp-stop",   cmd_temp_stop,   "Stop continuous temp output" },
     { NULL, NULL, NULL }
 };
 

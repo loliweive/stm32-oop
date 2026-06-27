@@ -4,9 +4,6 @@
 #include "stm32f103xb.h"
 #include "ota_config.h"
 #include "ota_flash.h"
-#include "ota_transport.h"
-#include "ota_transport_uart.h"
-#include "ota_client.h"
 #include "spi_flash.h"
 #include "gpio.h"
 #include "rcc.h"
@@ -16,9 +13,6 @@
 /* Dev signing key — must match tools/ota_sender.py DEFAULT_KEY (32 bytes) */
 static const uint8_t OTA_SIGN_KEY[32] = "STM32F103-OTA-DEV-KEY-01234567";
 
-static UartXportCtx uart_ctx;
-static OtaTransport transport;
-static OtaClient    ota;
 static GpioPin      led;
 static uint8_t      recovery_buf[1024];
 
@@ -100,7 +94,7 @@ int main(void) {
     rcc_set_sysclk(RCC_PLL, 9);
     led_init(); led_on();
 
-    /* ① 检查 metadata */
+    /* ① 检查 metadata — 已验证固件直接启动 */
     OtaMetadata meta;
     ota_flash_read(OTA_METADATA_START, (uint8_t*)&meta, sizeof(meta));
     if (meta.magic == OTA_MAGIC && meta.state == OTA_STATE_VERIFIED) {
@@ -111,19 +105,9 @@ int main(void) {
         led_off(); jump_to_app(OTA_APP_START);
     }
 
-    /* ② 等待 UART OTA (3秒) */
-    ota_transport_uart_create(&transport, &uart_ctx);
-    ota_xport_init(&transport);
-    ota_client_init(&ota, &transport);
-    for (int i=0;i<30;i++) {
-        uint8_t buf[OTA_FRAME_MAX_SIZE];
-        size_t n = ota_xport_recv(&transport, buf, sizeof(buf), 100);
-        if (n>0) { uint8_t t,s; const uint8_t *p; size_t pl;
-            if (ota_frame_decode(buf,n,&t,&s,&p,&pl) && t == OTA_CMD_HELLO) goto start_ota; }
-        if (i&1) led_on(); else led_off();
-    }
+    /* UART OTA 由 CLI `ota-start` 处理, bootloader 只做恢复/跳转 */
 
-    /* ③ 外部 Flash 恢复 */
+    /* ② 外部 Flash 恢复 */
     rcc_enable_spi(1); rcc_enable_gpio('A'); rcc_enable_gpio('B');
     { GpioPin s; GpioPin_ctor(&s,GPIOA,GPIO_PIN_5); gpio_set_mode(&s,GPIO_CNF_ALT_PP|GPIO_MODE_OUT_50MHZ);
       GpioPin_ctor(&s,GPIOA,GPIO_PIN_6); gpio_set_mode(&s,GPIO_CNF_FLOAT|GPIO_MODE_IN);
@@ -179,29 +163,17 @@ int main(void) {
         }
     }
 
-    /* ④ 旧固件 */
+    /* ③ 旧固件 (BOOTED 状态) */
     if (meta.magic == OTA_MAGIC && meta.state == OTA_STATE_BOOTED)
         { led_off(); jump_to_app(OTA_APP_START); }
 
-    /* ⑤ 直接向量表检查 */
+    /* ④ 直接向量表检查 (无 metadata 直接烧录的固件) */
     { uint32_t *av=(uint32_t*)OTA_APP_START;
       if (av[0]>=0x20000000 && av[0]<=0x20005000 && av[1]>=0x08000000 && av[1]<=0x08010000)
           { led_off(); jump_to_app(OTA_APP_START); } }
 
-    /* ⑥ 全部失败 — OLED 报错 */
-    oled_init_show("BOOT ERROR","UART OTA");
-    led_on();
-    while(1) {
-        uint8_t b[OTA_FRAME_MAX_SIZE];
-        size_t n=ota_xport_recv(&transport,b,sizeof(b),1000);
-        if(n>0){uint8_t t,s;const uint8_t*p;size_t pl;
-            if(ota_frame_decode(b,n,&t,&s,&p,&pl)&&t==OTA_CMD_HELLO) goto start_ota;}
-    }
-
-start_ota:
-    led_on(); ota_client_start(&ota);
-    while(ota_client_poll(&ota)){}
-    if (ota_client_get_state(&ota) == OTA_STATE_COMPLETE) ota_client_boot(&ota);
-    led_off(); while(1){ led_on(); for(volatile int i=0;i<500000;i++)__asm__("nop");
-                          led_off(); for(volatile int i=0;i<500000;i++)__asm__("nop"); }
+    /* ⑤ 全部失败 — OLED 报错 + LED 闪烁 */
+    oled_init_show("BOOT ERROR","NO FIRMWARE");
+    while(1) { led_on(); for(volatile int i=0;i<500000;i++)__asm__("nop");
+               led_off(); for(volatile int i=0;i<500000;i++)__asm__("nop"); }
 }
