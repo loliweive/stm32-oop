@@ -105,10 +105,10 @@ static void cmd_help(CLI *c, int argc, char **argv)
 static void cmd_iwdg(CLI *c, int argc, char **argv)
 {
     (void)argc; (void)argv;
-    cli_printf(c, "IWDG test: stop feeding, expect reset in <3s...\r\n");
-    /* SysTick 精确计数 10s, IWDG 0.5-1.2s 内必触发 (LSI 17-40kHz) */
+    cli_printf(c, "IWDG test: stop feeding, expect reset in 5-10s...\r\n");
+    /* SysTick 精确计数 15s, IWDG 4-9s 内必触发 */
     uint32_t ms = 0;
-    while (ms < 10000) {
+    while (ms < 15000) {
         if (SysTick->CTRL & (1<<16)) ms++;
     }
     cli_printf(c, "IWDG did NOT reset — watchdog may be disabled\r\n");
@@ -525,6 +525,7 @@ static void task_cli(void *params)
             __asm__("nop");
         }
         vTaskDelay(pdMS_TO_TICKS(5));
+        iwdg_feed();  /* CLI 轮询路径也喂狗, 确保不误复位 */
     }
 }
 
@@ -612,7 +613,7 @@ int main(void)
     DLOG("CP6: tasks ok");
 
     /* IWDG: 必须在调度器启动前最后一刻初始化, 否则提前超时复位 */
-    iwdg_init(4, 80);   /* PR=4 /64, RLR=80: 0.5-1.2s (LSI 17-40kHz). 短超时=快复位 */
+    iwdg_init(6, 400);  /* PR=6 /256, RLR=400: 3.8-8.9s (LSI 17-40kHz). idle+CLI 双路喂狗 */
     DLOG("CP7: IWDG ok");
 
     vTaskStartScheduler();
