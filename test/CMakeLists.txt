@@ -31,6 +31,7 @@ set(TEST_INCLUDES
     ${ROOT_DIR}/src/utils
     ${ROOT_DIR}/src/hal
     ${ROOT_DIR}/src/ota
+    ${ROOT_DIR}/src/display
     ${ROOT_DIR}/lib/stm32f1
     ${ROOT_DIR}/lib/cmsis
 )
@@ -121,4 +122,17 @@ set(OTA_SRC
 add_host_test(test_ota_protocol
     ${OTA_SRC}
     ${TEST_DIR}/test_ota_protocol.c
+)
+
+# SSD1306 OLED test (framebuffer operations, no I2C needed)
+set(SSD1306_SRC
+    ${ROOT_DIR}/src/display/ssd1306.c
+    ${ROOT_DIR}/src/display/font8x16.c
+    ${ROOT_DIR}/src/display/font6x8.c
+    ${ROOT_DIR}/src/display/font16x16.c
+)
+
+add_host_test(test_ssd1306
+    ${SSD1306_SRC}
+    ${TEST_DIR}/test_ssd1306.c
 )

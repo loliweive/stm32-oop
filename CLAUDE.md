@@ -1,7 +1,7 @@
 # CLAUDE.md — STM32-oop 项目状态 & 接力文件
 
-> **最后更新**: 2026-06-22
-> **当前会话工作**: 构建完整嵌入式系统 — OOP in C, TDD, FreeRTOS, CLI, OTA, 多传感器
+> **最后更新**: 2026-06-27
+> **当前会话工作**: 移植江协科技 OLED 驱动 → OOP vtable 模式, 20 个 host 单元测试
 > **下一次会话**: 阅读此文件即可接续, 无需重复询问上下文。
 
 ---
@@ -91,8 +91,8 @@ STM32F103C8T6 Blue Pill — 13/48 引脚已用, 5 个外设
 ## 4. 架构总览
 
 ```
-app/           ds18b20_freertos (当前主线) | blinky | uart_echo | ota_demo
-middleware/    cli/ | ota/ | sensor/ (OOP 接口) | display/ | storage/
+app/           ds18b20_freertos (当前主线) | blinky | uart_echo | ota_demo | oled_test
+middleware/    cli/ | ota/ | sensor/ (OOP 接口) | display/ (OLED OOP) | storage/
 hal/           gpio(vtable) | uart(依赖注入) | i2c | spi | timer(vtable) | adc | rcc
 core/          ring_buffer | list | state_machine | object
 lib/           CMSIS | STM32F103 regs | FreeRTOS V11 (submodule)
@@ -100,11 +100,13 @@ lib/           CMSIS | STM32F103 regs | FreeRTOS V11 (submodule)
 
 ### 核心设计模式
 
-1. **vtable 多态**: GPIO, Timer, Sensor 使用虚函数表 → 测试时可注入 mock
+1. **vtable 多态**: GPIO, Timer, Sensor, OLED 使用虚函数表 → 测试时可注入 mock
 2. **依赖注入**: UART 的 `SerialInterface` → host 测试不需要真实串口
 3. **Sensor OOP**: `DS18B20`, `DHT11`, `LightSensor` 都实现 `Sensor` 接口
-   - 应用层只需 `sensor_read(s, &temp, &hum)` — 不关心具体传感器类型
-   - 添加新传感器 = 实现 vtable, 0 行应用代码改动
+4. **OLED OOP**: `OledDisplay` 抽象接口 → `SSD1306` 具体实现 (vtable + 帧缓冲)
+   - 移植自江协科技 OLED 驱动 V2.0, 完整保留所有绘图/文本/中文功能
+   - 应用层通过 `OledDisplay*` 统一操作, 不关心底层硬件
+   - 支持: 点/线/矩形/三角/圆/椭圆/圆弧 + 8x16/6x8字体 + UTF-8中文 + printf
 
 ### FreeRTOS 任务
 
@@ -152,6 +154,7 @@ cd build/test && ctest --output-on-failure
 | 6 | test_uart | 7 用例 — 依赖注入 |
 | 7 | test_timer | 5 用例 |
 | 8 | test_ota_protocol | 12 用例 — CRC16 + 帧编解码 |
+| 9 | test_ssd1306 | 20 用例 — vtable/帧缓冲/绘图/文本 |
 
 ---
 
@@ -185,13 +188,18 @@ TOKEN=$(gh auth token) && \
 ### ✅ 已完成
 - [x] 完整的 HAL 层 (GPIO/UART/I2C/SPI/Timer/ADC/RCC/NVIC) — 全部 OOP vtable
 - [x] 核心运行时 (RingBuffer, List, StateMachine, Object, Assert, Log, Delay)
-- [x] TDD 单元测试 (8 套件, 60+ 断言, 100% pass)
+- [x] TDD 单元测试 (9 套件, 80+ 断言, 100% pass)
 - [x] FreeRTOS 集成 (V11, ARM_CM3 port, heap_4, 6KB heap)
 - [x] OneWire 总线驱动 (DS18B20)
 - [x] DHT11 温湿度驱动
 - [x] 光敏传感器驱动 (ADC + GPIO)
 - [x] Sensor OOP 接口 (3 个实现)
-- [x] SSD1306 OLED 128×64 I2C 驱动
+- [x] **OLED OOP 驱动** — 移植江协科技 V2.0 → vtable 模式
+  - 完整绘图: 点/线/矩形/三角/圆/椭圆/圆弧
+  - 双字体: 8x16 + 6x8 ASCII
+  - UTF-8 中文支持 (16x16 字模)
+  - 格式化输出 (printf)
+  - 20 个 host 单元测试
 - [x] SPI Flash W25Qxx 驱动 (JEDEC 自动识别)
 - [x] CLI 引擎 (行编辑, 历史, Tab 补全, ANSI)
 - [x] OTA 固件升级 (bootloader + 协议 + Python 发送工具)
@@ -215,7 +223,10 @@ TOKEN=$(gh auth token) && \
 2. **I2C/SPI/ADC 驱动**: 使用了 CMSIS 位定义 (代码审查后修复), 但仍缺少超时保护
 3. **RCC 时钟配置**: 有 HSE 超时 + HSI fallback (审查后添加)
 4. **ring_buffer**: head/tail/full 已声明 volatile, ISR 安全
-5. **SSD1306**: 使用低层 I2C 直接写 (`i2c_write_raw`) 绕过 I2cPort 封装 — 因为 I2cPort API 有额外的封装层不适合高速数据发送
+5. **SSD1306**: 使用低层 `i2c_write_raw()` 绕过 I2cPort 封装 (性能优化, 每页刷新 129 字节连续写)
+   - OOP vtable 模式: `OledDisplay` 抽象接口 → `SSD1306` 具体实现
+   - 支持多实例 (framebuf 在对象内, 非全局变量)
+   - `atan2` 用于圆弧绘制, 需链接 `-lm`
 6. **DHT11**: 读取时关中断 (~25ms), 会影响 FreeRTOS tick 精度
 7. **DS18B20**: 12-bit 转换需 750ms, sensor task 在此期间阻塞
 8. **OTA**: 使用 `ota_transport_shared` 共享 CLI 的 UART, OTA 期间 CLI 暂停
@@ -231,10 +242,16 @@ TOKEN=$(gh auth token) && \
 | `CMakeLists.txt` | 构建配置, 四模式, 源文件列表 | 🔴 高 |
 | `lib/stm32f1/stm32f103xb.h` | 寄存器定义 (添加外设时更新) | 🟡 中 |
 | `src/hal/*.h` | HAL 接口 (vtable 定义) | 🟢 低 |
-| `src/sensor/sensor.h` | Sensor OOP 接口 | 🟡 中 |
+| `src/display/oled.h` | OLED 抽象接口 (vtable) | 🟢 低 |
+| `src/display/ssd1306.h` | SSD1306 具体驱动头 | 🟢 低 |
+| `src/display/ssd1306.c` | SSD1306 完整实现 (~550行) | 🟡 中 |
+| `src/display/font8x16.c` | ASCII 8x16 字模 | 🟢 低 |
+| `src/display/font6x8.c` | ASCII 6x8 字模 | 🟢 低 |
+| `src/display/font16x16.c` | 中文 16x16 字模 (UTF-8) | 🟢 低 |
+| `src/sensor/sensor.h` | Sensor OOP 接口 | 🟢 低 |
 | `src/cli/cli.h` | CLI 引擎接口 | 🟢 低 |
 | `src/ota/ota_config.h` | OTA Flash 分区 & 协议参数 | 🟢 低 |
-| `test/test_*.c` | 单元测试 (添加新模块时创建) | 🟡 中 |
+| `test/test_*.c` | 单元测试 (9 套件, 80+ 断言) | 🟡 中 |
 | `docs/*.md` | 文档 & 流程图 | 🟡 中 |
 | `CLAUDE.md` | 本文件 — 每次大改动后更新 | 🔴 高 |
 
@@ -253,7 +270,23 @@ TOKEN=$(gh auth token) && \
 
 ## 12. 工作日志
 
-### 2026-06-22 (本次会话)
+### 2026-06-27 (本次会话)
+1. **OLED 移植**: 从江协科技 OLED 驱动 V2.0 移植到项目
+2. **OOP 重构**: 创建 `OledDisplay` 抽象接口 (vtable 模式, 类似 Sensor/GPIO)
+3. **SSD1306 重写**: 完整实现 22 个 vtable 方法
+   - 硬件控制: init/clear/flush/flush_area/reverse
+   - 几何绘图: point/line/rect/triangle/circle/ellipse/arc
+   - 文本: char/string/num/hex/bin/float/image/printf
+   - UTF-8 中文 + GB2312 fallback
+4. **字模数据**: 替换旧 ascii_font.c → 3 个新文件
+   - `font8x16.c` — 95 个 ASCII 8x16 字模
+   - `font6x8.c` — 95 个 ASCII 6x8 字模
+   - `font16x16.c` — 中文 16x16 UTF-8 字模 + Diode 图像
+5. **单元测试**: 20 个 host 测试 (framebuf 操作, 无需 I2C)
+6. **构建更新**: stm32f103 + freertos + host 三模式全部通过
+7. **CLAUDE.md 接力**: 更新架构/文件索引/状态/已知问题
+
+### 2026-06-22 (历史会话)
 1. **项目骨架**: CMake 双模式 + CMSIS + STM32F103 寄存器 + 链接脚本 + 启动汇编
 2. **核心运行时**: RingBuffer, List, StateMachine, Object, Assert, Log, Delay
 3. **HAL 层**: GPIO(vtable), UART(依赖注入), Timer(vtable), I2C, SPI, ADC, RCC, NVIC

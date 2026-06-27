@@ -1,280 +1,868 @@
 /**
  * @file    ssd1306.c
- * @brief   SSD1306 I2C 驱动实现
+ * @brief   SSD1306 OLED 128x64 I2C 驱动实现 — OOP vtable 模式
+ *
+ * 实现 OledDisplay 接口的所有方法：
+ *   - 硬件控制：init, clear, flush, flush_area, reverse
+ *   - 像素操作：draw_point, get_point
+ *   - 几何绘图：draw_line, draw_rect, draw_triangle,
+ *               draw_circle, draw_ellipse, draw_arc
+ *   - 文本显示：show_char, show_string, show_num, show_hex, show_bin,
+ *               show_float, show_image, printf
+ *
+ * 移植自江协科技 OLED 驱动 V2.0，重构为 OOP vtable 模式。
  */
+
 #include "ssd1306.h"
-#include "i2c.h"
+#include "oled_data.h"
 #include <string.h>
+#include <math.h>
+#include <stdio.h>
+#include <stdarg.h>
 
-/* ── I2C 发送命令/数据 ─────────────────────────────────── */
-static void _send_cmd(SSD1306 *oled, uint8_t cmd)
-{
-    uint8_t buf[2] = {0x00, cmd};  /* Co=0, D/C#=0 → 命令 */
-    i2c_write((I2cPort *)NULL, 0, buf, 0);  /* 占位 — 用低层 */
-    /* 直接 I2C 写 (绕过 i2c_port 封装) */
-    extern bool i2c_write_raw(void *i2c, uint8_t addr, const uint8_t *data, size_t len);
-    i2c_write_raw(oled->i2c, oled->addr, buf, 2);
-}
-
-static void _send_data(SSD1306 *oled, const uint8_t *data, size_t len)
-{
-    /* SSD1306 数据模式: 控制字节 = 0x40 */
-    /* 分批发送 (I2C 单次最多约 256 字节) */
-    for (size_t i = 0; i < len; i += 128) {
-        size_t chunk = (len - i > 128) ? 128 : (len - i);
-        uint8_t buf[129];
-        buf[0] = 0x40;  /* Co=0, D/C#=1 → 数据 */
-        memcpy(buf + 1, data + i, chunk);
-        extern bool i2c_write_raw(void *i2c, uint8_t addr, const uint8_t *data, size_t len);
-        i2c_write_raw(oled->i2c, oled->addr, buf, chunk + 1);
-    }
-}
-
-/* ── 低层 I2C 写 ────────────────────────────────────────── */
-/* 绕过 i2c.h 封装, 直接操作寄存器 */
+/* ── 目标硬件 I2C 寄存器操作 ────────────────────────── */
+#ifdef STM32F103xB
 #include "stm32f103xb.h"
-bool i2c_write_raw(void *i2c, uint8_t addr, const uint8_t *data, size_t len)
+
+/**
+ * @brief 低层 I2C 写 (绕过 I2cPort 封装，直接操作寄存器)
+ *
+ * 用于 OLED 数据批量传输，避免 I2cPort 的每次分帧开销。
+ * SSD1306 每页刷新需要一次发送 129 字节 (控制字节+128数据)，
+ * 直接寄存器操作显著减少 CPU 开销。
+ */
+static bool i2c_write_raw(void *i2c, uint8_t addr, const uint8_t *data, size_t len)
 {
     I2C_Type *i = (I2C_Type *)i2c;
+    uint32_t to;
+
+    /* 等待总线空闲 */
+    to = 100000;
+    while ((i->SR2 & I2C_SR2_BUSY) && --to) {}
+    if (!to) return false;
 
     /* START */
     i->CR1 |= I2C_CR1_START;
-    uint32_t to = 100000;
+    to = 100000;
     while (!(i->SR1 & I2C_SR1_SB) && --to) {}
-    if (!to) return false;
+    if (!to) { i->CR1 |= I2C_CR1_STOP; return false; }
 
     /* ADDR (write) */
     i->DR = (uint8_t)(addr << 1);
     to = 100000;
-    while (!(i->SR1 & I2C_SR1_ADDR) && --to) {}
+    while (!(i->SR1 & (I2C_SR1_ADDR | I2C_SR1_AF)) && --to) {}
+    if (!to || (i->SR1 & I2C_SR1_AF)) {
+        (void)i->SR2;
+        i->CR1 |= I2C_CR1_STOP;
+        return false;
+    }
     (void)i->SR2; /* clear ADDR */
 
     /* DATA */
     for (size_t n = 0; n < len; n++) {
         to = 100000;
         while (!(i->SR1 & I2C_SR1_TXE) && --to) {}
+        if (!to) { i->CR1 |= I2C_CR1_STOP; return false; }
         i->DR = data[n];
     }
+
+    /* 等待 BTF (字节传输完成) */
+    to = 100000;
+    while (!(i->SR1 & I2C_SR1_BTF) && --to) {}
 
     /* STOP */
     i->CR1 |= I2C_CR1_STOP;
     return true;
 }
 
-/* ── 初始化序列 ─────────────────────────────────────────── */
+#else /* HOST_TEST — mock 实现 */
 
-void ssd1306_init(SSD1306 *oled, void *i2c, uint8_t addr)
+#include <stdbool.h>
+static bool i2c_write_raw(void *i2c, uint8_t addr, const uint8_t *data, size_t len)
 {
-    oled->i2c  = i2c;
-    oled->addr = addr;
-    memset(oled->framebuf, 0, sizeof(oled->framebuf));
+    (void)i2c; (void)addr; (void)data; (void)len;
+    return true; /* host 测试中无真实 I2C */
+}
+#endif /* STM32F103xB */
 
-    /* Init sequence (verified against DShanMCU-F103 reference OLED driver) */
+/* ── 前向声明 (vtable 函数) ──────────────────────────── */
+static void _ssd1306_init(OledDisplay *self);
+static void _ssd1306_clear(OledDisplay *self);
+static void _ssd1306_flush(OledDisplay *self);
+static void _ssd1306_flush_area(OledDisplay *self, int16_t x, int16_t y,
+                                uint8_t w, uint8_t h);
+static void _ssd1306_reverse(OledDisplay *self);
+static void _ssd1306_reverse_area(OledDisplay *self, int16_t x, int16_t y,
+                                  uint8_t w, uint8_t h);
+static void _ssd1306_draw_point(OledDisplay *self, int16_t x, int16_t y);
+static uint8_t _ssd1306_get_point(OledDisplay *self, int16_t x, int16_t y);
+static void _ssd1306_draw_line(OledDisplay *self, int16_t x0, int16_t y0,
+                               int16_t x1, int16_t y1);
+static void _ssd1306_draw_rect(OledDisplay *self, int16_t x, int16_t y,
+                               uint8_t w, uint8_t h, uint8_t filled);
+static void _ssd1306_draw_triangle(OledDisplay *self,
+                                   int16_t x0, int16_t y0, int16_t x1, int16_t y1,
+                                   int16_t x2, int16_t y2, uint8_t filled);
+static void _ssd1306_draw_circle(OledDisplay *self, int16_t x, int16_t y,
+                                 uint8_t r, uint8_t filled);
+static void _ssd1306_draw_ellipse(OledDisplay *self, int16_t x, int16_t y,
+                                  uint8_t a, uint8_t b, uint8_t filled);
+static void _ssd1306_draw_arc(OledDisplay *self, int16_t x, int16_t y,
+                              uint8_t r, int16_t start_angle, int16_t end_angle,
+                              uint8_t filled);
+static void _ssd1306_show_char(OledDisplay *self, int16_t x, int16_t y,
+                               char ch, uint8_t font_size);
+static void _ssd1306_show_string(OledDisplay *self, int16_t x, int16_t y,
+                                 const char *str, uint8_t font_size);
+static void _ssd1306_show_num(OledDisplay *self, int16_t x, int16_t y,
+                              uint32_t num, uint8_t len, uint8_t font_size);
+static void _ssd1306_show_signed(OledDisplay *self, int16_t x, int16_t y,
+                                 int32_t num, uint8_t len, uint8_t font_size);
+static void _ssd1306_show_hex(OledDisplay *self, int16_t x, int16_t y,
+                              uint32_t num, uint8_t len, uint8_t font_size);
+static void _ssd1306_show_bin(OledDisplay *self, int16_t x, int16_t y,
+                              uint32_t num, uint8_t len, uint8_t font_size);
+static void _ssd1306_show_float(OledDisplay *self, int16_t x, int16_t y,
+                                double num, uint8_t int_len, uint8_t frac_len,
+                                uint8_t font_size);
+static void _ssd1306_show_image(OledDisplay *self, int16_t x, int16_t y,
+                                uint8_t w, uint8_t h, const uint8_t *img);
+
+/* ── 工具函数 ────────────────────────────────────────── */
+
+/** @brief 次方函数 (内部使用) */
+static uint32_t oled_pow(uint32_t x, uint32_t y)
+{
+    uint32_t result = 1;
+    while (y--) result *= x;
+    return result;
+}
+
+/**
+ * @brief 判断指定点是否在指定多边形内部
+ * @ref   W. Randolph Franklin, https://wrfranklin.org/Research/Short_Notes/pnpoly.html
+ */
+static uint8_t oled_pnpoly(uint8_t nvert, int16_t *vertx, int16_t *verty,
+                           int16_t testx, int16_t testy)
+{
+    int16_t i, j, c = 0;
+    for (i = 0, j = nvert - 1; i < nvert; j = i++) {
+        if (((verty[i] > testy) != (verty[j] > testy)) &&
+            (testx < (vertx[j] - vertx[i]) * (testy - verty[i]) /
+                      (verty[j] - verty[i]) + vertx[i])) {
+            c = !c;
+        }
+    }
+    return c;
+}
+
+/**
+ * @brief 判断指定点是否在指定角度内部
+ * @param start_angle 起始角度 (-180~180), 水平向右=0, 顺时针旋转
+ * @param end_angle   终止角度 (-180~180)
+ */
+static uint8_t oled_is_in_angle(int16_t x, int16_t y,
+                                int16_t start_angle, int16_t end_angle)
+{
+    int16_t point_angle = atan2(y, x) / 3.14 * 180;
+    if (start_angle < end_angle) {
+        return (point_angle >= start_angle && point_angle <= end_angle) ? 1 : 0;
+    } else {
+        return (point_angle >= start_angle || point_angle <= end_angle) ? 1 : 0;
+    }
+}
+
+/* ── 辅助: 获取 SSD1306 指针 ─────────────────────────── */
+static inline SSD1306 *_ssd(OledDisplay *self) {
+    return (SSD1306 *)self;
+}
+
+/* ── 低层 I2C 发送 ───────────────────────────────────── */
+
+/** @brief 发送命令字节 */
+static void _send_cmd(SSD1306 *oled, uint8_t cmd)
+{
+    uint8_t buf[2] = {0x00, cmd}; /* Co=0, D/C#=0 → 命令 */
+    i2c_write_raw(oled->i2c, oled->addr, buf, 2);
+}
+
+/** @brief 发送数据块 (控制字节 0x40 = 数据模式) */
+static void _send_data(SSD1306 *oled, const uint8_t *data, size_t len)
+{
+    for (size_t i = 0; i < len; i += 128) {
+        size_t chunk = (len - i > 128) ? 128 : (len - i);
+        uint8_t buf[129];
+        buf[0] = 0x40; /* Co=0, D/C#=1 → 数据 */
+        memcpy(buf + 1, data + i, chunk);
+        i2c_write_raw(oled->i2c, oled->addr, buf, chunk + 1);
+    }
+}
+
+/** @brief 设置光标位置 (页地址 + 列地址) */
+static void _set_cursor(SSD1306 *oled, uint8_t page, uint8_t col)
+{
+    _send_cmd(oled, 0xB0 | page);                    /* 页地址 */
+    _send_cmd(oled, 0x10 | ((col & 0xF0) >> 4));     /* 列地址高4位 */
+    _send_cmd(oled, 0x00 | (col & 0x0F));             /* 列地址低4位 */
+}
+
+/* ═══════════════════════════════════════════════════════
+ * vtable 实现
+ * ═══════════════════════════════════════════════════════ */
+
+/* ── 硬件控制 ────────────────────────────────────────── */
+
+static void _ssd1306_init(OledDisplay *self)
+{
+    SSD1306 *oled = _ssd(self);
+
+    /* SSD1306 初始化序列 */
     uint8_t init_cmds[] = {
         0xAE,        /* Display OFF */
-        0x20, 0x02,  /* PAGE_ADDR_MODE (verified — required for this OLED) */
-        0xA8, 0x3F,  /* MUX = 64 */
-        0xD3, 0x00,  /* Display offset */
-        0x40,        /* Start line = 0 */
-        0xA1,        /* Segment remap */
-        0xC8,        /* COM scan remap */
-        0xDA, 0x12,  /* COM pins */
-        0x81, 0xFF,  /* Contrast = max */
-        0xA4,        /* Normal display */
-        0xA6,        /* Not inverted */
-        0xD5, 0x80,  /* Clock div */
-        0x8D, 0x14,  /* Charge pump enable */
-        0xAF,        /* DISPLAY ON */
+        0xD5, 0x80,  /* 设置显示时钟分频比/振荡器频率 */
+        0xA8, 0x3F,  /* 设置多路复用率 (64) */
+        0xD3, 0x00,  /* 设置显示偏移 */
+        0x40,        /* 设置显示开始行 */
+        0xA1,        /* 设置左右方向 (正常) */
+        0xC8,        /* 设置上下方向 (正常) */
+        0xDA, 0x12,  /* 设置 COM 引脚硬件配置 */
+        0x81, 0xCF,  /* 设置对比度 */
+        0xD9, 0xF1,  /* 设置预充电周期 */
+        0xDB, 0x30,  /* 设置 VCOMH 取消选择级别 */
+        0xA4,        /* 整个显示打开/关闭 (正常) */
+        0xA6,        /* 设置正常/反色显示 (正常) */
+        0x8D, 0x14,  /* 设置充电泵 (启用) */
+        0xAF,        /* Display ON */
     };
     for (size_t i = 0; i < sizeof(init_cmds); i++) {
         _send_cmd(oled, init_cmds[i]);
     }
-}
 
-void ssd1306_clear(SSD1306 *oled)
-{
+    /* 清空显存并刷新 */
     memset(oled->framebuf, 0, sizeof(oled->framebuf));
-    /* Also clear OLED GRAM immediately */
-    for (int p = 0; p < 8; p++) {
-        _send_cmd(oled, 0xB0 + p);       /* Set page */
-        _send_cmd(oled, 0x00);            /* Column low */
-        _send_cmd(oled, 0x10);            /* Column high (=0) */
-        uint8_t zero[129]; zero[0] = 0x40;
-        for (int i = 1; i < 129; i++) zero[i] = 0;
-        i2c_write_raw(oled->i2c, oled->addr, zero, 129);
+    _ssd1306_flush(self);
+}
+
+static void _ssd1306_clear(OledDisplay *self)
+{
+    SSD1306 *oled = _ssd(self);
+    memset(oled->framebuf, 0, sizeof(oled->framebuf));
+}
+
+static void _ssd1306_flush(OledDisplay *self)
+{
+    SSD1306 *oled = _ssd(self);
+    for (uint8_t j = 0; j < SSD1306_PAGES; j++) {
+        _set_cursor(oled, j, 0);
+        _send_data(oled, oled->framebuf[j], SSD1306_WIDTH);
     }
 }
 
-void ssd1306_flush(SSD1306 *oled)
+static void _ssd1306_flush_area(OledDisplay *self, int16_t x, int16_t y,
+                                uint8_t width, uint8_t height)
 {
-    /* PAGE mode: write each page separately */
-    for (int p = 0; p < 8; p++) {
-        _send_cmd(oled, 0xB0 + p);
-        _send_cmd(oled, 0x00);
-        _send_cmd(oled, 0x10);
-        uint8_t buf[129]; buf[0] = 0x40;
-        for (int i = 0; i < 128; i++) buf[1+i] = oled->framebuf[p * 128 + i];
-        i2c_write_raw(oled->i2c, oled->addr, buf, 129);
+    SSD1306 *oled = _ssd(self);
+    int16_t page, page1;
+
+    page  = y / 8;
+    page1 = (y + height - 1) / 8 + 1;
+    if (y < 0) { page -= 1; page1 -= 1; }
+
+    for (int16_t j = page; j < page1; j++) {
+        if (x >= 0 && x <= 127 && j >= 0 && j <= 7) {
+            _set_cursor(oled, (uint8_t)j, (uint8_t)x);
+            _send_data(oled, &oled->framebuf[j][x], width);
+        }
     }
 }
 
-/* ── 绘图 ──────────────────────────────────────────────── */
-
-void ssd1306_pixel(SSD1306 *oled, uint8_t x, uint8_t y, bool on)
+static void _ssd1306_reverse(OledDisplay *self)
 {
-    if (x >= SSD1306_WIDTH || y >= SSD1306_HEIGHT) return;
-    uint16_t idx = x + (y / 8) * SSD1306_WIDTH;
-    if (on) oled->framebuf[idx] |=  (1 << (y & 7));
-    else    oled->framebuf[idx] &= ~(1 << (y & 7));
+    SSD1306 *oled = _ssd(self);
+    for (uint8_t j = 0; j < SSD1306_PAGES; j++) {
+        for (uint8_t i = 0; i < SSD1306_WIDTH; i++) {
+            oled->framebuf[j][i] ^= 0xFF;
+        }
+    }
 }
 
-void ssd1306_hline(SSD1306 *oled, uint8_t x, uint8_t y, uint8_t w)
+static void _ssd1306_reverse_area(OledDisplay *self, int16_t x, int16_t y,
+                                  uint8_t width, uint8_t height)
 {
-    for (uint8_t i = 0; i < w; i++) ssd1306_pixel(oled, x + i, y, true);
+    SSD1306 *oled = _ssd(self);
+    for (int16_t j = y; j < y + height; j++) {
+        for (int16_t i = x; i < x + width; i++) {
+            if (i >= 0 && i <= 127 && j >= 0 && j <= 63) {
+                oled->framebuf[j / 8][i] ^= (0x01 << (j % 8));
+            }
+        }
+    }
 }
 
-void ssd1306_fill_rect(SSD1306 *oled, uint8_t x, uint8_t y, uint8_t w, uint8_t h, bool on)
+/* ── 像素操作 ────────────────────────────────────────── */
+
+static void _ssd1306_draw_point(OledDisplay *self, int16_t x, int16_t y)
 {
-    for (uint8_t j = 0; j < h; j++)
-        for (uint8_t i = 0; i < w; i++)
-            ssd1306_pixel(oled, x + i, y + j, on);
+    SSD1306 *oled = _ssd(self);
+    if (x >= 0 && x <= 127 && y >= 0 && y <= 63) {
+        oled->framebuf[y / 8][x] |= (0x01 << (y % 8));
+    }
 }
 
-/* ── 5×7 字体 ──────────────────────────────────────────── */
-static const uint8_t font5x7[96][5] = {
-    {0x00,0x00,0x00,0x00,0x00}, /* space */
-    {0x00,0x00,0x5F,0x00,0x00}, /* ! */
-    {0x00,0x07,0x00,0x07,0x00}, /* " */
-    {0x14,0x7F,0x14,0x7F,0x14}, /* # */
-    {0x24,0x2A,0x7F,0x2A,0x12}, /* $ */
-    {0x23,0x13,0x08,0x64,0x62}, /* % */
-    {0x36,0x49,0x55,0x22,0x50}, /* & */
-    {0x00,0x05,0x03,0x00,0x00}, /* ' */
-    {0x00,0x1C,0x22,0x41,0x00}, /* ( */
-    {0x00,0x41,0x22,0x1C,0x00}, /* ) */
-    {0x08,0x2A,0x1C,0x2A,0x08}, /* * */
-    {0x08,0x08,0x3E,0x08,0x08}, /* + */
-    {0x00,0x50,0x30,0x00,0x00}, /* , */
-    {0x08,0x08,0x08,0x08,0x08}, /* - */
-    {0x00,0x60,0x60,0x00,0x00}, /* . */
-    {0x20,0x10,0x08,0x04,0x02}, /* / */
-    {0x3E,0x51,0x49,0x45,0x3E}, /* 0 */
-    {0x00,0x42,0x7F,0x40,0x00}, /* 1 */
-    {0x42,0x61,0x51,0x49,0x46}, /* 2 */
-    {0x21,0x41,0x45,0x4B,0x31}, /* 3 */
-    {0x18,0x14,0x12,0x7F,0x10}, /* 4 */
-    {0x27,0x45,0x45,0x45,0x39}, /* 5 */
-    {0x3C,0x4A,0x49,0x49,0x30}, /* 6 */
-    {0x01,0x71,0x09,0x05,0x03}, /* 7 */
-    {0x36,0x49,0x49,0x49,0x36}, /* 8 */
-    {0x06,0x49,0x49,0x29,0x1E}, /* 9 */
-    {0x00,0x36,0x36,0x00,0x00}, /* : */
-    {0x00,0x56,0x36,0x00,0x00}, /* ; */
-    {0x00,0x08,0x14,0x22,0x41}, /* < */
-    {0x14,0x14,0x14,0x14,0x14}, /* = */
-    {0x41,0x22,0x14,0x08,0x00}, /* > */
-    {0x02,0x01,0x51,0x09,0x06}, /* ? */
-    {0x3E,0x41,0x5D,0x55,0x1E}, /* @ */
-    {0x7E,0x11,0x11,0x11,0x7E}, /* A */
-    {0x7F,0x49,0x49,0x49,0x36}, /* B */
-    {0x3E,0x41,0x41,0x41,0x22}, /* C */
-    {0x7F,0x41,0x41,0x22,0x1C}, /* D */
-    {0x7F,0x49,0x49,0x49,0x41}, /* E */
-    {0x7F,0x09,0x09,0x01,0x01}, /* F */
-    {0x3E,0x41,0x41,0x51,0x32}, /* G */
-    {0x7F,0x08,0x08,0x08,0x7F}, /* H */
-    {0x00,0x41,0x7F,0x41,0x00}, /* I */
-    {0x20,0x40,0x41,0x3F,0x01}, /* J */
-    {0x7F,0x08,0x14,0x22,0x41}, /* K */
-    {0x7F,0x40,0x40,0x40,0x40}, /* L */
-    {0x7F,0x02,0x04,0x02,0x7F}, /* M */
-    {0x7F,0x04,0x08,0x10,0x7F}, /* N */
-    {0x3E,0x41,0x41,0x41,0x3E}, /* O */
-    {0x7F,0x09,0x09,0x09,0x06}, /* P */
-    {0x3E,0x41,0x51,0x21,0x5E}, /* Q */
-    {0x7F,0x09,0x19,0x29,0x46}, /* R */
-    {0x46,0x49,0x49,0x49,0x31}, /* S */
-    {0x01,0x01,0x7F,0x01,0x01}, /* T */
-    {0x3F,0x40,0x40,0x40,0x3F}, /* U */
-    {0x1F,0x20,0x40,0x20,0x1F}, /* V */
-    {0x7F,0x20,0x18,0x20,0x7F}, /* W */
-    {0x63,0x14,0x08,0x14,0x63}, /* X */
-    {0x03,0x04,0x78,0x04,0x03}, /* Y */
-    {0x61,0x51,0x49,0x45,0x43}, /* Z */
-    {0x3E,0x41,0x41,0x41,0x3E}, /* [ actually 0 */
-    {0x04,0x08,0x10,0x20,0x40}, /* \ */
-    {0x7F,0x40,0x40,0x40,0x00}, /* ] actually | */
-    {0x02,0x01,0x02,0x00,0x00}, /* ^ */
-    {0x40,0x40,0x40,0x40,0x40}, /* _ */
-    {0x00,0x01,0x02,0x04,0x00}, /* ` */
-    {0x20,0x54,0x54,0x54,0x78}, /* a */
-    {0x7F,0x48,0x44,0x44,0x38}, /* b */
-    {0x38,0x44,0x44,0x44,0x20}, /* c */
-    {0x38,0x44,0x44,0x48,0x7F}, /* d */
-    {0x38,0x54,0x54,0x54,0x18}, /* e */
-    {0x08,0x7E,0x09,0x01,0x02}, /* f */
-    {0x08,0x14,0x54,0x54,0x3C}, /* g */
-    {0x7F,0x08,0x04,0x04,0x78}, /* h */
-    {0x00,0x44,0x7D,0x40,0x00}, /* i */
-    {0x20,0x40,0x44,0x3D,0x00}, /* j */
-    {0x7F,0x10,0x28,0x44,0x00}, /* k */
-    {0x00,0x41,0x7F,0x40,0x00}, /* l */
-    {0x7C,0x04,0x18,0x04,0x78}, /* m */
-    {0x7C,0x08,0x04,0x04,0x78}, /* n */
-    {0x38,0x44,0x44,0x44,0x38}, /* o */
-    {0x7C,0x14,0x14,0x14,0x08}, /* p */
-    {0x08,0x14,0x14,0x18,0x7C}, /* q */
-    {0x7C,0x08,0x04,0x04,0x08}, /* r */
-    {0x48,0x54,0x54,0x54,0x20}, /* s */
-    {0x04,0x3F,0x44,0x40,0x20}, /* t */
-    {0x3C,0x40,0x40,0x20,0x7C}, /* u */
-    {0x1C,0x20,0x40,0x20,0x1C}, /* v */
-    {0x3C,0x40,0x30,0x40,0x3C}, /* w */
-    {0x44,0x28,0x10,0x28,0x44}, /* x */
-    {0x0C,0x50,0x50,0x50,0x3C}, /* y */
-    {0x44,0x64,0x54,0x4C,0x44}, /* z */
+static uint8_t _ssd1306_get_point(OledDisplay *self, int16_t x, int16_t y)
+{
+    SSD1306 *oled = _ssd(self);
+    if (x >= 0 && x <= 127 && y >= 0 && y <= 63) {
+        if (oled->framebuf[y / 8][x] & (0x01 << (y % 8))) return 1;
+    }
+    return 0;
+}
+
+/* ── 几何绘图 ────────────────────────────────────────── */
+
+static void _ssd1306_draw_line(OledDisplay *self,
+                               int16_t x0, int16_t y0,
+                               int16_t x1, int16_t y1)
+{
+    int16_t x, y, dx, dy, d, incrE, incrNE, temp;
+    uint8_t yflag = 0, xyflag = 0;
+
+    if (y0 == y1) {
+        /* 横线 */
+        if (x0 > x1) { temp = x0; x0 = x1; x1 = temp; }
+        for (x = x0; x <= x1; x++) _ssd1306_draw_point(self, x, y0);
+        return;
+    }
+    if (x0 == x1) {
+        /* 竖线 */
+        if (y0 > y1) { temp = y0; y0 = y1; y1 = temp; }
+        for (y = y0; y <= y1; y++) _ssd1306_draw_point(self, x0, y);
+        return;
+    }
+
+    /* Bresenham 算法画斜线 */
+    if (x0 > x1) {
+        temp = x0; x0 = x1; x1 = temp;
+        temp = y0; y0 = y1; y1 = temp;
+    }
+
+    if (y0 > y1) {
+        y0 = -y0; y1 = -y1;
+        yflag = 1;
+    }
+
+    if (y1 - y0 > x1 - x0) {
+        temp = x0; x0 = y0; y0 = temp;
+        temp = x1; x1 = y1; y1 = temp;
+        xyflag = 1;
+    }
+
+    dx = x1 - x0;
+    dy = y1 - y0;
+    incrE = 2 * dy;
+    incrNE = 2 * (dy - dx);
+    d = 2 * dy - dx;
+    x = x0; y = y0;
+
+    /* 画起始点 */
+    if (yflag && xyflag)      _ssd1306_draw_point(self, y, -x);
+    else if (yflag)           _ssd1306_draw_point(self, x, -y);
+    else if (xyflag)           _ssd1306_draw_point(self, y, x);
+    else                       _ssd1306_draw_point(self, x, y);
+
+    while (x < x1) {
+        x++;
+        if (d < 0) { d += incrE; }
+        else       { y++; d += incrNE; }
+
+        if (yflag && xyflag)      _ssd1306_draw_point(self, y, -x);
+        else if (yflag)           _ssd1306_draw_point(self, x, -y);
+        else if (xyflag)           _ssd1306_draw_point(self, y, x);
+        else                       _ssd1306_draw_point(self, x, y);
+    }
+}
+
+static void _ssd1306_draw_rect(OledDisplay *self, int16_t x, int16_t y,
+                               uint8_t width, uint8_t height, uint8_t filled)
+{
+    if (!filled) {
+        for (int16_t i = x; i < x + width; i++) {
+            _ssd1306_draw_point(self, i, y);
+            _ssd1306_draw_point(self, i, y + height - 1);
+        }
+        for (int16_t i = y; i < y + height; i++) {
+            _ssd1306_draw_point(self, x, i);
+            _ssd1306_draw_point(self, x + width - 1, i);
+        }
+    } else {
+        for (int16_t i = x; i < x + width; i++) {
+            for (int16_t j = y; j < y + height; j++) {
+                _ssd1306_draw_point(self, i, j);
+            }
+        }
+    }
+}
+
+static void _ssd1306_draw_triangle(OledDisplay *self,
+                                   int16_t x0, int16_t y0,
+                                   int16_t x1, int16_t y1,
+                                   int16_t x2, int16_t y2, uint8_t filled)
+{
+    int16_t vx[] = {x0, x1, x2};
+    int16_t vy[] = {y0, y1, y2};
+
+    if (!filled) {
+        _ssd1306_draw_line(self, x0, y0, x1, y1);
+        _ssd1306_draw_line(self, x0, y0, x2, y2);
+        _ssd1306_draw_line(self, x1, y1, x2, y2);
+    } else {
+        int16_t minx = x0, miny = y0, maxx = x0, maxy = y0;
+        if (x1 < minx) minx = x1; if (x2 < minx) minx = x2;
+        if (y1 < miny) miny = y1; if (y2 < miny) miny = y2;
+        if (x1 > maxx) maxx = x1; if (x2 > maxx) maxx = x2;
+        if (y1 > maxy) maxy = y1; if (y2 > maxy) maxy = y2;
+
+        for (int16_t i = minx; i <= maxx; i++) {
+            for (int16_t j = miny; j <= maxy; j++) {
+                if (oled_pnpoly(3, vx, vy, i, j)) {
+                    _ssd1306_draw_point(self, i, j);
+                }
+            }
+        }
+    }
+}
+
+static void _ssd1306_draw_circle(OledDisplay *self, int16_t x, int16_t y,
+                                 uint8_t radius, uint8_t filled)
+{
+    int16_t cx = 0, cy = radius;
+    int16_t d = 1 - radius;
+
+    /* 八分之一圆弧起始点 */
+    _ssd1306_draw_point(self, x + cx, y + cy);
+    _ssd1306_draw_point(self, x - cx, y - cy);
+    _ssd1306_draw_point(self, x + cy, y + cx);
+    _ssd1306_draw_point(self, x - cy, y - cx);
+
+    if (filled) {
+        for (int16_t j = -cy; j < cy; j++) {
+            _ssd1306_draw_point(self, x, y + j);
+        }
+    }
+
+    while (cx < cy) {
+        cx++;
+        if (d < 0) { d += 2 * cx + 1; }
+        else       { cy--; d += 2 * (cx - cy) + 1; }
+
+        /* 每个八分之一圆弧 */
+        _ssd1306_draw_point(self, x + cx, y + cy);
+        _ssd1306_draw_point(self, x + cy, y + cx);
+        _ssd1306_draw_point(self, x - cx, y - cy);
+        _ssd1306_draw_point(self, x - cy, y - cx);
+        _ssd1306_draw_point(self, x + cx, y - cy);
+        _ssd1306_draw_point(self, x + cy, y - cx);
+        _ssd1306_draw_point(self, x - cx, y + cy);
+        _ssd1306_draw_point(self, x - cy, y + cx);
+
+        if (filled) {
+            for (int16_t j = -cy; j < cy; j++) {
+                _ssd1306_draw_point(self, x + cx, y + j);
+                _ssd1306_draw_point(self, x - cx, y + j);
+            }
+            for (int16_t j = -cx; j < cx; j++) {
+                _ssd1306_draw_point(self, x - cy, y + j);
+                _ssd1306_draw_point(self, x + cy, y + j);
+            }
+        }
+    }
+}
+
+static void _ssd1306_draw_ellipse(OledDisplay *self, int16_t x, int16_t y,
+                                  uint8_t a, uint8_t b, uint8_t filled)
+{
+    int16_t cx = 0, cy = b;
+    int16_t ai = a, bi = b;
+    float d1, d2;
+
+    if (filled) {
+        for (int16_t j = -cy; j < cy; j++) {
+            _ssd1306_draw_point(self, x, y + j);
+        }
+    }
+
+    _ssd1306_draw_point(self, x + cx, y + cy);
+    _ssd1306_draw_point(self, x - cx, y - cy);
+    _ssd1306_draw_point(self, x - cx, y + cy);
+    _ssd1306_draw_point(self, x + cx, y - cy);
+
+    d1 = bi * bi + ai * ai * (-bi + 0.5f);
+
+    /* 椭圆中间部分 */
+    while (bi * bi * (cx + 1) < ai * ai * (cy - 0.5f)) {
+        if (d1 <= 0) { d1 += bi * bi * (2 * cx + 3); }
+        else         { d1 += bi * bi * (2 * cx + 3) + ai * ai * (-2 * cy + 2); cy--; }
+        cx++;
+
+        if (filled) {
+            for (int16_t j = -cy; j < cy; j++) {
+                _ssd1306_draw_point(self, x + cx, y + j);
+                _ssd1306_draw_point(self, x - cx, y + j);
+            }
+        }
+
+        _ssd1306_draw_point(self, x + cx, y + cy);
+        _ssd1306_draw_point(self, x - cx, y - cy);
+        _ssd1306_draw_point(self, x - cx, y + cy);
+        _ssd1306_draw_point(self, x + cx, y - cy);
+    }
+
+    /* 椭圆两侧部分 */
+    d2 = bi * bi * (cx + 0.5f) * (cx + 0.5f)
+       + ai * ai * (cy - 1) * (cy - 1) - ai * ai * bi * bi;
+
+    while (cy > 0) {
+        if (d2 <= 0) { d2 += bi * bi * (2 * cx + 2) + ai * ai * (-2 * cy + 3); cx++; }
+        else         { d2 += ai * ai * (-2 * cy + 3); }
+        cy--;
+
+        if (filled) {
+            for (int16_t j = -cy; j < cy; j++) {
+                _ssd1306_draw_point(self, x + cx, y + j);
+                _ssd1306_draw_point(self, x - cx, y + j);
+            }
+        }
+
+        _ssd1306_draw_point(self, x + cx, y + cy);
+        _ssd1306_draw_point(self, x - cx, y - cy);
+        _ssd1306_draw_point(self, x - cx, y + cy);
+        _ssd1306_draw_point(self, x + cx, y - cy);
+    }
+}
+
+static void _ssd1306_draw_arc(OledDisplay *self, int16_t x, int16_t y,
+                              uint8_t radius, int16_t start_angle, int16_t end_angle,
+                              uint8_t filled)
+{
+    int16_t cx = 0, cy = radius;
+    int16_t d = 1 - radius;
+
+    if (oled_is_in_angle(cx, cy, start_angle, end_angle))
+        _ssd1306_draw_point(self, x + cx, y + cy);
+    if (oled_is_in_angle(-cx, -cy, start_angle, end_angle))
+        _ssd1306_draw_point(self, x - cx, y - cy);
+    if (oled_is_in_angle(cy, cx, start_angle, end_angle))
+        _ssd1306_draw_point(self, x + cy, y + cx);
+    if (oled_is_in_angle(-cy, -cx, start_angle, end_angle))
+        _ssd1306_draw_point(self, x - cy, y - cx);
+
+    if (filled) {
+        for (int16_t j = -cy; j < cy; j++) {
+            if (oled_is_in_angle(0, j, start_angle, end_angle))
+                _ssd1306_draw_point(self, x, y + j);
+        }
+    }
+
+    while (cx < cy) {
+        cx++;
+        if (d < 0) { d += 2 * cx + 1; }
+        else       { cy--; d += 2 * (cx - cy) + 1; }
+
+        if (oled_is_in_angle(cx, cy, start_angle, end_angle))
+            _ssd1306_draw_point(self, x + cx, y + cy);
+        if (oled_is_in_angle(cy, cx, start_angle, end_angle))
+            _ssd1306_draw_point(self, x + cy, y + cx);
+        if (oled_is_in_angle(-cx, -cy, start_angle, end_angle))
+            _ssd1306_draw_point(self, x - cx, y - cy);
+        if (oled_is_in_angle(-cy, -cx, start_angle, end_angle))
+            _ssd1306_draw_point(self, x - cy, y - cx);
+        if (oled_is_in_angle(cx, -cy, start_angle, end_angle))
+            _ssd1306_draw_point(self, x + cx, y - cy);
+        if (oled_is_in_angle(cy, -cx, start_angle, end_angle))
+            _ssd1306_draw_point(self, x + cy, y - cx);
+        if (oled_is_in_angle(-cx, cy, start_angle, end_angle))
+            _ssd1306_draw_point(self, x - cx, y + cy);
+        if (oled_is_in_angle(-cy, cx, start_angle, end_angle))
+            _ssd1306_draw_point(self, x - cy, y + cx);
+
+        if (filled) {
+            for (int16_t j = -cy; j < cy; j++) {
+                if (oled_is_in_angle(cx, j, start_angle, end_angle))
+                    _ssd1306_draw_point(self, x + cx, y + j);
+                if (oled_is_in_angle(-cx, j, start_angle, end_angle))
+                    _ssd1306_draw_point(self, x - cx, y + j);
+            }
+            for (int16_t j = -cx; j < cx; j++) {
+                if (oled_is_in_angle(-cy, j, start_angle, end_angle))
+                    _ssd1306_draw_point(self, x - cy, y + j);
+                if (oled_is_in_angle(cy, j, start_angle, end_angle))
+                    _ssd1306_draw_point(self, x + cy, y + j);
+            }
+        }
+    }
+}
+
+/* ── 文本显示 ────────────────────────────────────────── */
+
+static void _ssd1306_show_image(OledDisplay *self, int16_t x, int16_t y,
+                                uint8_t width, uint8_t height, const uint8_t *image)
+{
+    SSD1306 *oled = _ssd(self);
+    int16_t page, shift;
+
+    /* 清除目标区域 */
+    for (int16_t j = y; j < y + height; j++) {
+        for (int16_t i = x; i < x + width; i++) {
+            if (i >= 0 && i <= 127 && j >= 0 && j <= 63) {
+                oled->framebuf[j / 8][i] &= ~(0x01 << (j % 8));
+            }
+        }
+    }
+
+    for (uint8_t j = 0; j < (height - 1) / 8 + 1; j++) {
+        for (uint8_t i = 0; i < width; i++) {
+            if (x + i < 0 || x + i > 127) continue;
+
+            page = y / 8;
+            shift = y % 8;
+            if (y < 0) { page -= 1; shift += 8; }
+
+            if (page + j >= 0 && page + j <= 7) {
+                oled->framebuf[page + j][x + i] |=
+                    image[j * width + i] << (shift);
+            }
+
+            if (page + j + 1 >= 0 && page + j + 1 <= 7) {
+                oled->framebuf[page + j + 1][x + i] |=
+                    image[j * width + i] >> (8 - shift);
+            }
+        }
+    }
+}
+
+static void _ssd1306_show_char(OledDisplay *self, int16_t x, int16_t y,
+                               char ch, uint8_t font_size)
+{
+    if (font_size == OLED_FONT_8X16) {
+        _ssd1306_show_image(self, x, y, 8, 16, OLED_F8x16[(uint8_t)ch - ' ']);
+    } else if (font_size == OLED_FONT_6X8) {
+        _ssd1306_show_image(self, x, y, 6, 8, OLED_F6x8[(uint8_t)ch - ' ']);
+    }
+}
+
+static void _ssd1306_show_string(OledDisplay *self, int16_t x, int16_t y,
+                                 const char *str, uint8_t font_size)
+{
+    uint16_t i = 0;
+    int16_t x_offset = 0;
+    char single_char[5];
+    uint8_t char_len;
+    uint16_t p_index;
+
+    while (str[i] != '\0') {
+#ifdef OLED_CHARSET_UTF8
+        /* 提取 UTF-8 字符 */
+        if ((str[i] & 0x80) == 0x00) {
+            char_len = 1;
+            single_char[0] = str[i++];
+            single_char[1] = '\0';
+        } else if ((str[i] & 0xE0) == 0xC0) {
+            char_len = 2;
+            single_char[0] = str[i++];
+            if (str[i] == '\0') break;
+            single_char[1] = str[i++];
+            single_char[2] = '\0';
+        } else if ((str[i] & 0xF0) == 0xE0) {
+            char_len = 3;
+            single_char[0] = str[i++];
+            if (str[i] == '\0') break;
+            single_char[1] = str[i++];
+            if (str[i] == '\0') break;
+            single_char[2] = str[i++];
+            single_char[3] = '\0';
+        } else if ((str[i] & 0xF8) == 0xF0) {
+            char_len = 4;
+            single_char[0] = str[i++];
+            if (str[i] == '\0') break;
+            single_char[1] = str[i++];
+            if (str[i] == '\0') break;
+            single_char[2] = str[i++];
+            if (str[i] == '\0') break;
+            single_char[3] = str[i++];
+            single_char[4] = '\0';
+        } else {
+            i++; continue;
+        }
+#else
+        /* GB2312 */
+        if ((str[i] & 0x80) == 0x00) {
+            char_len = 1;
+            single_char[0] = str[i++];
+            single_char[1] = '\0';
+        } else {
+            char_len = 2;
+            single_char[0] = str[i++];
+            if (str[i] == '\0') break;
+            single_char[1] = str[i++];
+            single_char[2] = '\0';
+        }
+#endif
+
+        if (char_len == 1) {
+            _ssd1306_show_char(self, x + x_offset, y, single_char[0], font_size);
+            x_offset += font_size;
+        } else {
+            /* 搜索中文字模库 */
+            for (p_index = 0;
+                 strcmp(OLED_CF16x16[p_index].index, "") != 0;
+                 p_index++) {
+                if (strcmp(OLED_CF16x16[p_index].index, single_char) == 0) {
+                    break;
+                }
+            }
+
+            if (font_size == OLED_FONT_8X16) {
+                _ssd1306_show_image(self, x + x_offset, y, 16, 16,
+                                    OLED_CF16x16[p_index].data);
+                x_offset += 16;
+            } else if (font_size == OLED_FONT_6X8) {
+                _ssd1306_show_char(self, x + x_offset, y, '?', OLED_FONT_6X8);
+                x_offset += OLED_FONT_6X8;
+            }
+        }
+    }
+}
+
+static void _ssd1306_show_num(OledDisplay *self, int16_t x, int16_t y,
+                              uint32_t num, uint8_t length, uint8_t font_size)
+{
+    for (uint8_t i = 0; i < length; i++) {
+        char digit = (char)(num / oled_pow(10, length - i - 1) % 10 + '0');
+        _ssd1306_show_char(self, x + i * font_size, y, digit, font_size);
+    }
+}
+
+static void _ssd1306_show_signed(OledDisplay *self, int16_t x, int16_t y,
+                                 int32_t num, uint8_t length, uint8_t font_size)
+{
+    uint32_t num1;
+    if (num >= 0) {
+        _ssd1306_show_char(self, x, y, '+', font_size);
+        num1 = (uint32_t)num;
+    } else {
+        _ssd1306_show_char(self, x, y, '-', font_size);
+        num1 = (uint32_t)(-num);
+    }
+    for (uint8_t i = 0; i < length; i++) {
+        char digit = (char)(num1 / oled_pow(10, length - i - 1) % 10 + '0');
+        _ssd1306_show_char(self, x + (i + 1) * font_size, y, digit, font_size);
+    }
+}
+
+static void _ssd1306_show_hex(OledDisplay *self, int16_t x, int16_t y,
+                              uint32_t num, uint8_t length, uint8_t font_size)
+{
+    for (uint8_t i = 0; i < length; i++) {
+        uint8_t single = num / oled_pow(16, length - i - 1) % 16;
+        char digit = (single < 10) ? (char)(single + '0')
+                                   : (char)(single - 10 + 'A');
+        _ssd1306_show_char(self, x + i * font_size, y, digit, font_size);
+    }
+}
+
+static void _ssd1306_show_bin(OledDisplay *self, int16_t x, int16_t y,
+                              uint32_t num, uint8_t length, uint8_t font_size)
+{
+    for (uint8_t i = 0; i < length; i++) {
+        char digit = (char)(num / oled_pow(2, length - i - 1) % 2 + '0');
+        _ssd1306_show_char(self, x + i * font_size, y, digit, font_size);
+    }
+}
+
+static void _ssd1306_show_float(OledDisplay *self, int16_t x, int16_t y,
+                                double num, uint8_t int_len, uint8_t frac_len,
+                                uint8_t font_size)
+{
+    uint32_t pow_num, int_num, frac_num;
+
+    if (num >= 0) {
+        _ssd1306_show_char(self, x, y, '+', font_size);
+    } else {
+        _ssd1306_show_char(self, x, y, '-', font_size);
+        num = -num;
+    }
+
+    int_num = (uint32_t)num;
+    num -= int_num;
+    pow_num = oled_pow(10, frac_len);
+    frac_num = (uint32_t)(num * pow_num + 0.5); /* 四舍五入 */
+    int_num += frac_num / pow_num;
+
+    _ssd1306_show_num(self, x + font_size, y, int_num, int_len, font_size);
+    _ssd1306_show_char(self, x + (int_len + 1) * font_size, y, '.', font_size);
+    _ssd1306_show_num(self, x + (int_len + 2) * font_size, y, frac_num, frac_len, font_size);
+}
+
+/* ── 格式化输出 ──────────────────────────────────────── */
+
+void oled_printf(OledDisplay *self, int16_t x, int16_t y,
+                 uint8_t font_size, const char *fmt, ...)
+{
+    char str[256];
+    va_list arg;
+    va_start(arg, fmt);
+    vsprintf(str, fmt, arg);
+    va_end(arg);
+    _ssd1306_show_string(self, x, y, str, font_size);
+}
+
+/* ═══════════════════════════════════════════════════════
+ * vtable 定义
+ * ═══════════════════════════════════════════════════════ */
+
+static const OledVtable _ssd1306_vtable = {
+    /* 硬件控制 */
+    .init         = _ssd1306_init,
+    .clear        = _ssd1306_clear,
+    .flush        = _ssd1306_flush,
+    .flush_area   = _ssd1306_flush_area,
+    .reverse      = _ssd1306_reverse,
+    .reverse_area = _ssd1306_reverse_area,
+
+    /* 像素操作 */
+    .draw_point   = _ssd1306_draw_point,
+    .get_point    = _ssd1306_get_point,
+
+    /* 几何绘图 */
+    .draw_line    = _ssd1306_draw_line,
+    .draw_rect    = _ssd1306_draw_rect,
+    .draw_triangle = _ssd1306_draw_triangle,
+    .draw_circle  = _ssd1306_draw_circle,
+    .draw_ellipse = _ssd1306_draw_ellipse,
+    .draw_arc     = _ssd1306_draw_arc,
+
+    /* 文本显示 */
+    .show_char    = _ssd1306_show_char,
+    .show_string  = _ssd1306_show_string,
+    .show_num     = _ssd1306_show_num,
+    .show_signed  = _ssd1306_show_signed,
+    .show_hex     = _ssd1306_show_hex,
+    .show_bin     = _ssd1306_show_bin,
+    .show_float   = _ssd1306_show_float,
+    .show_image   = _ssd1306_show_image,
+
+    /* 格式化输出 */
+    .printf       = NULL, /* printf 使用 varargs, 由 oled_printf 直接调用 */
 };
 
-void ssd1306_char(SSD1306 *oled, uint8_t x, uint8_t page, char c)
+/* ═══════════════════════════════════════════════════════
+ * 构造函数
+ * ═══════════════════════════════════════════════════════ */
+
+void ssd1306_ctor(SSD1306 *self, void *i2c, uint8_t addr)
 {
-    if (page >= SSD1306_PAGES || x > SSD1306_WIDTH - 6) return;
-    if (c < 32 || c > 127) c = ' ';
-    const uint8_t *glyph = font5x7[c - 32];
-    for (int i = 0; i < 5; i++) {
-        oled->framebuf[x + i + page * SSD1306_WIDTH] = glyph[i];
-    }
-    /* 列间距 */
-    oled->framebuf[x + 5 + page * SSD1306_WIDTH] = 0;
-}
-
-void ssd1306_text(SSD1306 *oled, uint8_t x, uint8_t page, const char *str)
-{
-    uint8_t col = x;
-    while (*str) {
-        if (col > SSD1306_WIDTH - 6) { col = 0; page++; }
-        if (page >= SSD1306_PAGES) break;
-        ssd1306_char(oled, col, page, *str++);
-        col += 6;
-    }
-}
-
-/* ── 传感器数据专用显示 ────────────────────────────────── */
-
-void ssd1306_show_sensor(SSD1306 *oled, const char *title,
-                         const char *line1, const char *line2)
-{
-    ssd1306_clear(oled);
-
-    /* 标题栏 (反白) */
-    ssd1306_fill_rect(oled, 0, 0, 128, 10, true);
-    ssd1306_text(oled, 2, 0, title);  /* 需要反白显示... 简化: 先画标题 */
-    /* 分隔线 */
-    ssd1306_hline(oled, 0, 11, 128);
-    ssd1306_hline(oled, 0, 12, 128);
-
-    /* 数据行 */
-    if (line1) ssd1306_text(oled, 0, 2, line1);
-    if (line2) ssd1306_text(oled, 0, 4, line2);
-
-    ssd1306_flush(oled);
+    self->base.vtable = &_ssd1306_vtable;
+    self->i2c  = i2c;
+    self->addr = addr;
+    memset(self->framebuf, 0, sizeof(self->framebuf));
 }

@@ -55,8 +55,11 @@ elseif(BUILD_MODE STREQUAL "stm32f103")
         ${STM32_SRC_DIR}/hal/gpio.c
         ${STM32_SRC_DIR}/hal/rcc.c
         ${STM32_SRC_DIR}/hal/i2c.c
-        ${STM32_SRC_DIR}/display/ascii_font.c
-        ${STM32_SRC_DIR}/app/uart_test/main.c
+        ${STM32_SRC_DIR}/display/ssd1306.c
+        ${STM32_SRC_DIR}/display/font8x16.c
+        ${STM32_SRC_DIR}/display/font6x8.c
+        ${STM32_SRC_DIR}/display/font16x16.c
+        ${STM32_SRC_DIR}/app/oled_test/main.c
     )
 
     target_include_directories(${PROJECT_NAME} PRIVATE ${STM32_INCLUDES})
@@ -72,6 +75,8 @@ elseif(BUILD_MODE STREQUAL "stm32f103")
         -Wl,--gc-sections
         -T "${LINKER_SCRIPT}"
     )
+
+    target_link_libraries(${PROJECT_NAME} PRIVATE m)
 
     target_compile_definitions(${PROJECT_NAME} PRIVATE
         STM32F103xB
@@ -102,7 +107,7 @@ elseif(BUILD_MODE STREQUAL "freertos")
         "${STM32_SRC_DIR}/hal"
         "${STM32_SRC_DIR}/utils"
         "${STM32_SRC_DIR}/app/freertos_demo"
-        "${STM32_SRC_DIR}/app/ds18b20_freertos"
+        "${STM32_SRC_DIR}/app/cli_minimal"
         "${STM32_SRC_DIR}/cli"
         "${STM32_SRC_DIR}/sensor"
         "${STM32_SRC_DIR}/display"
@@ -134,21 +139,12 @@ elseif(BUILD_MODE STREQUAL "freertos")
         ${STM32_SRC_DIR}/hal/uart.c
         ${STM32_SRC_DIR}/hal/rcc.c
         ${STM32_SRC_DIR}/hal/i2c.c
-        ${STM32_SRC_DIR}/hal/spi.c
-        ${STM32_SRC_DIR}/hal/adc.c
-        ${STM32_SRC_DIR}/hal/nvic.c
-        ${STM32_SRC_DIR}/sensor/onewire.c
-        ${STM32_SRC_DIR}/sensor/ds18b20.c
-        ${STM32_SRC_DIR}/sensor/dht11.c
-        ${STM32_SRC_DIR}/sensor/light_sensor.c
         ${STM32_SRC_DIR}/display/ssd1306.c
-        ${STM32_SRC_DIR}/storage/spi_flash.c
+        ${STM32_SRC_DIR}/display/font8x16.c
+        ${STM32_SRC_DIR}/display/font6x8.c
+        ${STM32_SRC_DIR}/display/font16x16.c
         ${STM32_SRC_DIR}/cli/cli.c
-        ${STM32_SRC_DIR}/ota/ota_protocol.c
-        ${STM32_SRC_DIR}/ota/ota_flash.c
-        ${STM32_SRC_DIR}/ota/ota_client.c
-        ${STM32_SRC_DIR}/ota/ota_transport_shared.c
-        ${STM32_SRC_DIR}/app/ds18b20_freertos/main.c
+        ${STM32_SRC_DIR}/app/cli_minimal/main.c
         ${STM32_SRC_DIR}/app/freertos_demo/freertos_hooks.c
         ${FREERTOS_SRC}
     )
@@ -157,7 +153,7 @@ elseif(BUILD_MODE STREQUAL "freertos")
 
     target_compile_options(${PROJECT_NAME} PRIVATE
         -mcpu=cortex-m3 -mthumb -mfloat-abi=soft
-        -Os -g3 -Wall -Wextra
+        -O0 -g3 -Wall -Wextra
         -ffunction-sections -fdata-sections -fno-common
         -Wno-maybe-uninitialized
     )
@@ -167,6 +163,8 @@ elseif(BUILD_MODE STREQUAL "freertos")
         -Wl,--gc-sections
         -T "${LINKER_SCRIPT}"
     )
+
+    target_link_libraries(${PROJECT_NAME} PRIVATE m)
 
     target_compile_definitions(${PROJECT_NAME} PRIVATE
         STM32F103xB
@@ -206,10 +204,6 @@ elseif(BUILD_MODE STREQUAL "bootloader")
         ${STM32_SRC_DIR}/hal/rcc.c
         ${STM32_SRC_DIR}/hal/uart.c
         ${STM32_SRC_DIR}/utils/assert.c
-        ${STM32_SRC_DIR}/ota/ota_protocol.c
-        ${STM32_SRC_DIR}/ota/ota_flash.c
-        ${STM32_SRC_DIR}/ota/ota_transport_uart.c
-        ${STM32_SRC_DIR}/ota/ota_client.c
         ${STM32_SRC_DIR}/bootloader/main.c
     )
 

@@ -31,8 +31,15 @@ cmake_install.cmake
 CTestTestfile.cmake
 Testing/
 
-# Compiled test binaries
+# Compiled test binaries (no extension) — keep .c sources
 test/test_*
+!test/test_*.c
 
 # Dependency directories (if any)
 node_modules/
+
+# Reference code (ported into project, keep local)
+reference/
+
+# Dev worktrees
+.dev/

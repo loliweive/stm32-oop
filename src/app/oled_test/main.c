@@ -1,127 +1,127 @@
 /**
- * OLED test — 8x16 font, dynamic counter, verified on DShanMCU-F103
+ * @file    main.c
+ * @brief   OLED 测试 — OOP OLED API 演示
+ *
+ * 使用 SSD1306 OOP 驱动演示:
+ *   - 初始化 (oled_init)
+ *   - 字符串显示 (oled_show_string)
+ *   - 数值显示 (oled_show_num)
+ *   - 几何绘图 (oled_draw_*)
+ *   - 帧缓冲刷新 (oled_flush)
+ *
+ * 接线:
+ *   SCL → PB6, SDA → PB7 (I2C1)
+ *   板载 LED → PC13
  */
+
 #include "stm32f103xb.h"
 #include "rcc.h"
 #include "gpio.h"
 #include "i2c.h"
-#include <stdbool.h>
-#include <stddef.h>
-#include <string.h>
+#include "ssd1306.h"
 
-/* ── LED ───────────────────────────────────────────────── */
+/* ── LED (PC13, 低电平亮) ────────────────────────────── */
 static GpioPin _led;
-static void L_ON(void)  { gpio_set(&_led, 0); }
-static void L_OFF(void) { gpio_set(&_led, 1); }
-static void dly(uint32_t n) { while (n--) __asm__("nop"); }
 
-/* ── I2C ───────────────────────────────────────────────── */
-#define I2C_TO   100000
-#define OLED_ADR 0x3C
-static I2C_Type *g_i2c;
-
-static bool i2c_send(const uint8_t *buf, size_t len)
-{
-    uint32_t to;
-    to=I2C_TO; while((g_i2c->SR2&I2C_SR2_BUSY)&&--to){}
-    g_i2c->CR1|=I2C_CR1_START;
-    to=I2C_TO; while(!(g_i2c->SR1&I2C_SR1_SB)&&--to){}
-    if(!to){g_i2c->CR1|=I2C_CR1_STOP;return false;}
-    g_i2c->DR=(uint8_t)(OLED_ADR<<1);
-    to=I2C_TO; while(!(g_i2c->SR1&(I2C_SR1_ADDR|I2C_SR1_AF))&&--to){}
-    if(!to||(g_i2c->SR1&I2C_SR1_AF)){(void)g_i2c->SR2;g_i2c->CR1|=I2C_CR1_STOP;return false;}
-    (void)g_i2c->SR2;
-    for(size_t n=0;n<len;n++){to=I2C_TO;while(!(g_i2c->SR1&I2C_SR1_TXE)&&--to){}if(!to){g_i2c->CR1|=I2C_CR1_STOP;return false;}g_i2c->DR=buf[n];}
-    to=I2C_TO;while(!(g_i2c->SR1&I2C_SR1_BTF)&&--to){}
-    g_i2c->CR1|=I2C_CR1_STOP;
-    return true;
+static void led_on(void)  { gpio_set(&_led, 0); }
+static void led_off(void) { gpio_set(&_led, 1); }
+static void delay_ms(uint32_t n) {
+    for (uint32_t i = 0; i < n * 4000; i++) { __asm__("nop"); }
 }
 
-static void oled_cmd(uint8_t c)  { uint8_t b[2]={0,c}; i2c_send(b,2); }
-static void oled_data(const uint8_t *d, size_t n) {
-    /* Send in chunks with 0x40 prefix */
-    uint8_t hdr[129]; hdr[0]=0x40;
-    for(size_t o=0;o<n;o+=128){
-        size_t chunk=(n-o>128)?128:(n-o);
-        memcpy(hdr+1,d+o,chunk);
-        i2c_send(hdr,chunk+1);
-    }
-}
-
-/* ── 8x16 font ─────────────────────────────────────────── */
-extern const uint8_t ascii_font[][16];
-
-static void draw_char(int page, int col, char c)
-{
-    unsigned uc = ((unsigned)c<32||(unsigned)c>127)?32:(unsigned)c;
-    oled_cmd(0xB0+page); oled_cmd(col&0x0F); oled_cmd(0x10|(col>>4));
-    i2c_send((uint8_t*)&ascii_font[uc][0],8);  /* need to wrap in 0x40 prefix... */
-}
-
-/* Actually use proper data send for each char half */
-static void put_char(int page, int col, char c)
-{
-    unsigned uc = ((unsigned)c<32||(unsigned)c>127)?32:(unsigned)c;
-    /* Upper half */
-    { uint8_t b[9]; b[0]=0x40; for(int i=0;i<8;i++)b[1+i]=ascii_font[uc][i];
-      oled_cmd(0xB0+page); oled_cmd(col&0x0F); oled_cmd(0x10|(col>>4));
-      i2c_send(b,9); }
-    /* Lower half */
-    { uint8_t b[9]; b[0]=0x40; for(int i=0;i<8;i++)b[1+i]=ascii_font[uc][i+8];
-      oled_cmd(0xB0+page+1); oled_cmd(col&0x0F); oled_cmd(0x10|(col>>4));
-      i2c_send(b,9); }
-}
-
-static void put_str(int page, const char *s)
-{
-    int col=0; while(*s){put_char(page,col,*s++);col+=8;}
-}
-
-static void clear_page(int page)
-{
-    oled_cmd(0xB0+page); oled_cmd(0); oled_cmd(0x10);
-    uint8_t z[129]; z[0]=0x40; for(int i=1;i<129;i++)z[i]=0;
-    i2c_send(z,129);
-}
-
-/* ═══════════════════════════════════════════════════════ */
+/* ── 入口 ────────────────────────────────────────────── */
 int main(void)
 {
-    rcc_set_sysclk(RCC_HSI,0);
-    rcc_enable_gpio('B'); rcc_enable_gpio('C'); rcc_enable_i2c(1);
+    /* 时钟 & GPIO */
+    rcc_set_sysclk(RCC_HSI, 0);
+    rcc_enable_gpio('B');
+    rcc_enable_gpio('C');
+    rcc_enable_i2c(1);
 
-    /* LED */
-    GpioPin_ctor(&_led,GPIOC,GPIO_PIN_13); gpio_set_mode(&_led,GPIO_MODE_OUT_PP); L_OFF();
+    /* 板载 LED */
+    GpioPin_ctor(&_led, GPIOC, GPIO_PIN_13);
+    gpio_set_mode(&_led, GPIO_MODE_OUT_PP);
+    led_off();
 
-    /* I2C GPIO */
-    { GpioPin s,s2; GpioPin_ctor(&s,GPIOB,GPIO_PIN_6); gpio_set_mode(&s,GPIO_CNF_ALT_OD|GPIO_MODE_OUT_50MHZ);
-      GpioPin_ctor(&s2,GPIOB,GPIO_PIN_7); gpio_set_mode(&s2,GPIO_CNF_ALT_OD|GPIO_MODE_OUT_50MHZ);
-      gpio_set(&s,1); gpio_set(&s2,1); }
+    /* I2C1 GPIO: PB6=SCL, PB7=SDA (复用开漏) */
+    {
+        GpioPin scl, sda;
+        GpioPin_ctor(&scl, GPIOB, GPIO_PIN_6);
+        gpio_set_mode(&scl, GPIO_CNF_ALT_OD | GPIO_MODE_OUT_50MHZ);
+        GpioPin_ctor(&sda, GPIOB, GPIO_PIN_7);
+        gpio_set_mode(&sda, GPIO_CNF_ALT_OD | GPIO_MODE_OUT_50MHZ);
+    }
 
-    /* I2C init */
-    { I2cPort p; I2cPort_ctor(&p,I2C1,400000,8000000); i2c_init(&p); }
-    g_i2c=I2C1;
+    /* I2C 初始化 */
+    {
+        I2cPort p;
+        I2cPort_ctor(&p, I2C1, 400000, 8000000);
+        i2c_init(&p);
+    }
 
-    /* Init OLED */
-    { uint8_t cmds[]={0xAE,0x20,0x02,0xA8,0x3F,0xD3,0x00,0x40,0xA1,0xC8,
-      0xDA,0x12,0x81,0xFF,0xA4,0xA6,0xD5,0x80,0x8D,0x14,0xAF};
-      for(size_t i=0;i<sizeof(cmds);i++)oled_cmd(cmds[i]); }
+    /* 启动闪烁 — 快闪 2 次 = 启动 */
+    led_on();  delay_ms(100); led_off(); delay_ms(100);
+    led_on();  delay_ms(100); led_off(); delay_ms(100);
 
-    /* Clear all */
-    for(int p=0;p<8;p++)clear_page(p);
+    /* ═══════════════════════════════════════════════════
+     * OOP OLED 初始化
+     * ═══════════════════════════════════════════════════ */
 
-    /* Title: pages 1-2 */
-    put_str(1,"OLED OK!");
+    SSD1306 oled;
+    ssd1306_ctor(&oled, I2C1, 0x3C);
+    OledDisplay *d = &oled.base;
 
-    /* Counter: pages 4-5 */
-    int cnt=0;
-    char buf[32];
-    extern int snprintf(char*,unsigned long,const char*,...);
+    oled_init(d);   /* 发送初始化序列 + 清屏 */
+    led_on();  delay_ms(300); led_off(); /* 慢闪 1 次 = OLED 就绪 */
 
-    while(1){
-        clear_page(4); clear_page(5);
-        snprintf(buf,sizeof(buf),"%d",cnt++);
-        put_str(4,buf);
-        L_ON(); dly(400000); L_OFF(); dly(8000000);
+    /* ── 第 1 屏：文本演示 ─────────────────────────────
+     * 8x16 每行 16px → Y=0, 16, 32, 48
+     * 6x8  每行 8px  → Y=0, 8, 16, 24, 32, 40, 48, 56 */
+    oled_show_string(d, 0,  0, "STM32F103", OLED_FONT_8X16);     /* 行1, 16px */
+    oled_show_string(d, 0, 16, "SSD1306 OLED", OLED_FONT_8X16);  /* 行2, 16px */
+    oled_show_string(d, 0, 48, "Hello World!", OLED_FONT_6X8);   /* 行7, 8px */
+    oled_flush(d);
+    delay_ms(2000);
+
+    /* ── 第 2 屏：中文 + 数值 ─────────────────────────── */
+    oled_clear(d);
+    oled_show_string(d, 0,  0, "你好世界", OLED_FONT_8X16);      /* 16px */
+    oled_show_string(d, 0, 16, "Temp:", OLED_FONT_8X16);         /* 16px */
+    oled_show_float(d, 40, 16, 26.5, 2, 1, OLED_FONT_8X16);     /* 同行 */
+    oled_show_string(d, 0, 40, "Hum:", OLED_FONT_6X8);           /* 8px */
+    oled_show_num(d, 30, 40, 58, 2, OLED_FONT_6X8);              /* 同行 */
+    oled_show_string(d, 44, 40, "%", OLED_FONT_6X8);              /* 同行 */
+    oled_flush(d);
+    delay_ms(2000);
+
+    /* ── 第 3 屏：几何绘图 ───────────────────────────── */
+    oled_clear(d);
+    /* 十字线 */
+    oled_draw_line(d, 0, 31, 127, 31);
+    oled_draw_line(d, 63, 0, 63, 63);
+    /* 矩形 */
+    oled_draw_rect(d, 4, 4, 20, 12, OLED_UNFILLED);
+    oled_draw_rect(d, 28, 4, 20, 12, OLED_FILLED);
+    /* 圆 */
+    oled_draw_circle(d, 74, 10, 8, OLED_UNFILLED);
+    oled_draw_circle(d, 100, 10, 8, OLED_FILLED);
+    /* 三角形 */
+    oled_draw_triangle(d, 4, 40, 20, 40, 12, 58, OLED_UNFILLED);
+    oled_draw_triangle(d, 28, 40, 44, 40, 36, 58, OLED_FILLED);
+    oled_flush(d);
+    delay_ms(2000);
+
+    /* ── 第 4 屏：动态计数器 ─────────────────────────── */
+    int cnt = 0;
+    while (1) {
+        oled_clear(d);
+        oled_show_string(d, 0,  8, "Counter:", OLED_FONT_8X16);  /* 16px, 居中偏上 */
+        oled_show_num(d,     0, 28, cnt, 6, OLED_FONT_8X16);     /* 16px 数字 */
+        oled_show_hex(d,     0, 48, cnt, 8, OLED_FONT_6X8);      /* 8px, hex 辅助 */
+        oled_flush(d);
+
+        led_on();  delay_ms(50); led_off();
+        delay_ms(950);
+        cnt++;
     }
 }
