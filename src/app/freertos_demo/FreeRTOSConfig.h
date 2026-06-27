@@ -64,7 +64,7 @@
 #define INCLUDE_uxTaskGetStackHighWaterMark     1
 
 /* ── 钩子 ──────────────────────────────────────────────────── */
-#define configUSE_IDLE_HOOK                     0
+#define configUSE_IDLE_HOOK                     1   /* IWDG feed */
 #define configUSE_TICK_HOOK                     0
 #define configUSE_MALLOC_FAILED_HOOK            0
 #define configCHECK_FOR_STACK_OVERFLOW          1  /* 栈溢出检测 */

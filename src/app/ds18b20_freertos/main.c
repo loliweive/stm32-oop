@@ -41,6 +41,7 @@
 #include "oled.h"
 #include "i2c.h"
 #include "spi_flash.h"
+#include "iwdg.h"
 
 /* ── OLED 引脚 ──────────────────────────────────────────── */
 #define OLED_I2C       I2C1
@@ -92,10 +93,25 @@ static void uart_cli_write(const char *str, size_t len)
  *  CLI 命令实现
  * ═══════════════════════════════════════════════════════════════ */
 
+/* ── FreeRTOS idle hook: 喂狗 ─────────────────────── */
+void vApplicationIdleHook(void) { iwdg_feed(); }
+
 static void cmd_help(CLI *c, int argc, char **argv)
 {
     (void)argc; (void)argv;
     cli_show_help(c);
+}
+
+static void cmd_iwdg(CLI *c, int argc, char **argv)
+{
+    (void)argc; (void)argv;
+    cli_printf(c, "IWDG test: stop feeding, expect reset in <3s...\r\n");
+    /* SysTick 精确计数 10s, IWDG 0.5-1.2s 内必触发 (LSI 17-40kHz) */
+    uint32_t ms = 0;
+    while (ms < 10000) {
+        if (SysTick->CTRL & (1<<16)) ms++;
+    }
+    cli_printf(c, "IWDG did NOT reset — watchdog may be disabled\r\n");
 }
 
 static void cmd_temp(CLI *c, int argc, char **argv)
@@ -368,6 +384,7 @@ static const CLICommand commands[] = {
     { "btn",         cmd_btn,         "Read button state (PB14)" },
     { "flash-id",    cmd_flash_id,    "Read SPI Flash JEDEC ID" },
     { "info",        cmd_info,        "Show system information" },
+    { "iwdg",        cmd_iwdg,        "Test watchdog (triggers reset)" },
     { "led",         cmd_led,         "Control LED: on|off|toggle" },
     { "oled",        cmd_oled,        "Show system info on OLED" },
     { "ota-start",   cmd_ota_start,   "Start OTA firmware update" },
@@ -593,6 +610,10 @@ int main(void)
     xTaskCreate(task_sensor,  "Sensor", 128, NULL, 1, NULL);
     xTaskCreate(task_cli,     "CLI",    512, NULL, 2, NULL);
     DLOG("CP6: tasks ok");
+
+    /* IWDG: 必须在调度器启动前最后一刻初始化, 否则提前超时复位 */
+    iwdg_init(4, 80);   /* PR=4 /64, RLR=80: 0.5-1.2s (LSI 17-40kHz). 短超时=快复位 */
+    DLOG("CP7: IWDG ok");
 
     vTaskStartScheduler();
     DLOG("CP7: NEVER");  /* should never reach */
