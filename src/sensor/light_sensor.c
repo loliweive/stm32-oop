@@ -40,15 +40,21 @@ static bool _init(Sensor *base)
 {
     LightSensor *self = (LightSensor *)base;
 
+    /* PA3 模拟输入 (ADC1_IN3) */
+    GpioPin ain;
+    GpioPin_ctor(&ain, GPIOA, GPIO_PIN_3);
+    gpio_set_mode(&ain, GPIO_CNF_ANALOG | GPIO_MODE_IN);
+
     /* 初始化 ADC */
     AdcPort adc_port;
     AdcPort_ctor(&adc_port, self->adc);
     adc_init(&adc_port);
 
-    /* 初始化数字输入 (PB11, 浮空) */
+    /* 初始化数字输入 (PB11, 上拉) */
     GpioPin dpin;
     GpioPin_ctor(&dpin, self->do_port, self->do_pin);
-    gpio_set_mode(&dpin, GPIO_CNF_FLOAT | 0x0);
+    gpio_set_mode(&dpin, 0x8 | GPIO_MODE_IN);
+    gpio_set(&dpin, 1);
 
     return true;
 }

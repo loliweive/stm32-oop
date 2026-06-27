@@ -15,6 +15,10 @@ void adc_init(AdcPort *self)
 {
     ADC_Type *a = (ADC_Type *)self->adc;
 
+    /* ADC 预分频: PCLK2/6 = 12MHz @72MHz (max 14MHz) */
+    RCC->CFGR = (RCC->CFGR & ~(3<<14)) | (2<<14);  /* ADCPRE=10 → /6 */
+    for (volatile int i = 0; i < 100; i++) __asm__("nop");
+
     /* ADON: 上电 ADC */
     a->CR2 |= ADC_CR2_ADON;
     /* tSTAB: 上电稳定时间 (~10µs) */

@@ -70,6 +70,7 @@ typedef struct {
 /* ── 全局对象 ────────────────────────────────────────────── */
 static QueueHandle_t temp_queue;
 static Sensor       *sensor;          /* ← 多态指针! 不关心具体类型 */
+static Sensor       *light_sensor;     /* 光敏传感器 (常驻, 独立 IO) */
 static OneWireBus    ow_bus;          /* DS18B20 复用 */
 static DS18B20       ds18b20_obj;     /* DS18B20 实例 */
 static DHT11         dht11_obj;       /* DHT11 实例 */
@@ -163,6 +164,21 @@ static void cmd_btn(CLI *c, int argc, char **argv)
                state == 0 ? "LOW — contact GND" : "HIGH — pull-up");
 }
 
+static void cmd_light(CLI *c, int argc, char **argv) {
+    (void)argc; (void)argv;
+    /* Raw debug: prove we entered the function */
+    while(!(USART1->SR&(1<<7))){} USART1->DR='L';
+    float lux; uint8_t dout;
+    if (sensor_read(light_sensor, &lux, &dout)) {
+        USART1->DR='1';
+        cli_printf(c, "Light(M7): %5.1f %%  DO=%u  (PA3 ADC + PB11 GPIO)\r\n",
+                   (double)lux, (unsigned)dout);
+    } else {
+        USART1->DR='0';
+        cli_printf(c, "Light sensor read failed\r\n");
+    }
+}
+
 static void cmd_led(CLI *c, int argc, char **argv)
 {
     if (argc < 2) {
@@ -212,7 +228,7 @@ static void cmd_info(CLI *c, int argc, char **argv)
     cli_printf(c, "  [OLED]     SSD1306 128x64, I2C1 PB6/PB7 @0x3C\r\n");
 
     /* Sensor */
-    cli_printf(c, "  [SENSOR]   %s (PA1)\r\n", sensor_name(sensor));
+    cli_printf(c, "  [SENSOR]   %s (PA1)  [LIGHT] M7 (PA3+PB11)\r\n", sensor_name(sensor));
 
     /* SPI Flash */
     const SpiFlashInfo *fi = spi_flash_get_info(&spiflash);
@@ -386,6 +402,7 @@ static const CLICommand commands[] = {
     { "info",        cmd_info,        "Show system information" },
     { "iwdg",        cmd_iwdg,        "Test watchdog (triggers reset)" },
     { "led",         cmd_led,         "Control LED: on|off|toggle" },
+    { "light",       cmd_light,       "Read light sensor (PA3+PB11)" },
     { "oled",        cmd_oled,        "Show system info on OLED" },
     { "ota-start",   cmd_ota_start,   "Start OTA firmware update" },
     { "ota-status",  cmd_ota_status,  "Show OTA update status" },
@@ -422,6 +439,10 @@ static void task_sensor(void *params)
     /* BMP280: I2C1 PB6/PB7, 与 OLED 共用 (I2C 时钟已在 OLED 初始化中使能) */
     sensor = bmp280_create(&bmp280_obj, I2C1, 0x76);
 #endif
+
+    /* 光敏传感器常驻 — PA3(ADC)+PB11(GPIO), 与 PA1 温度传感器无冲突 */
+    rcc_enable_gpio('B'); rcc_enable_adc(1);
+    light_sensor = light_sensor_create(&light_obj, ADC1, 3, GPIOB, GPIO_PIN_11);
 
     /* ── 检查传感器是否就绪 ──────────────────────────────── */
     if (!sensor || !sensor_is_present(sensor)) {
