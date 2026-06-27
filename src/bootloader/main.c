@@ -10,7 +10,11 @@
 #include "spi_flash.h"
 #include "gpio.h"
 #include "rcc.h"
+#include "hmac_sha256.h"
 #include <string.h>
+
+/* Dev signing key — must match tools/ota_sender.py DEFAULT_KEY (32 bytes) */
+static const uint8_t OTA_SIGN_KEY[32] = "STM32F103-OTA-DEV-KEY-01234567";
 
 static UartXportCtx uart_ctx;
 static OtaTransport transport;
@@ -135,14 +139,39 @@ int main(void) {
                 int ff=1; for(int i=0;i<1024;i++) if(recovery_buf[i]!=0xFF){ff=0;break;}
                 if(ff){sz=o;break;}
             } if(!sz) sz=OTA_APP_SIZE;
+
+            /* 读取并验证 HMAC 签名 (末尾 36 bytes) */
+            uint32_t real_size = sz;
+            bool sig_ok = false;
+            if (sz > 36) {
+                uint8_t sig_buf[36];
+                spi_flash_read(&ext, sz-36, sig_buf, 36);
+                real_size = sig_buf[0]|((uint32_t)sig_buf[1]<<8)|((uint32_t)sig_buf[2]<<16)|((uint32_t)sig_buf[3]<<24);
+                if (real_size > 0 && real_size <= OTA_APP_SIZE) {
+                    /* Incremental HMAC — read firmware in chunks from ext Flash */
+                    hmac_ctx hctx; uint8_t computed[32];
+                    hmac_sha256_init(&hctx, OTA_SIGN_KEY, 32);
+                    for (uint32_t off=0; off<real_size; off+=sizeof(recovery_buf)) {
+                        size_t chunk = real_size-off;
+                        if (chunk>sizeof(recovery_buf)) chunk=sizeof(recovery_buf);
+                        spi_flash_read(&ext, off, recovery_buf, chunk);
+                        hmac_sha256_update(&hctx, recovery_buf, chunk);
+                    }
+                    hmac_sha256_final(&hctx, computed);
+                    sig_ok = true;
+                    for (int i=0;i<32;i++) if (computed[i]!=sig_buf[4+i]) { sig_ok=false; break; }
+                }
+            }
+
+            if (!sig_ok) { led_on(); for(;;){led_on();for(volatile int d=0;d<500000;d++)__asm__("nop");led_off();for(volatile int d=0;d<500000;d++)__asm__("nop");} }
             led_on();
-            ota_flash_init(); ota_flash_erase_range(OTA_APP_START,sz);
-            for(uint32_t o=0;o<sz;o+=sizeof(recovery_buf)){
-                size_t c=sz-o; if(c>sizeof(recovery_buf))c=sizeof(recovery_buf);
+            ota_flash_init(); ota_flash_erase_range(OTA_APP_START, real_size);
+            for(uint32_t o=0;o<real_size;o+=sizeof(recovery_buf)){
+                size_t c=real_size-o; if(c>sizeof(recovery_buf))c=sizeof(recovery_buf);
                 spi_flash_read(&ext,o,recovery_buf,c);
                 ota_flash_write(OTA_APP_START+o,recovery_buf,c); }
             OtaMetadata m; memset(&m,0,sizeof(m));
-            m.magic=OTA_MAGIC; m.firmware_size=sz; m.state=OTA_STATE_VERIFIED;
+            m.magic=OTA_MAGIC; m.firmware_size=real_size; m.state=OTA_STATE_VERIFIED;
             ota_flash_erase_page(OTA_METADATA_START);
             ota_flash_write(OTA_METADATA_START,(const uint8_t*)&m,sizeof(m));
             ota_flash_lock();

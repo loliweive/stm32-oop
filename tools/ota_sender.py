@@ -19,6 +19,8 @@ Requirements:
 """
 
 import argparse
+import hashlib
+import hmac
 import struct
 import sys
 import time
@@ -356,13 +358,18 @@ Examples:
 
     firmware = fw_path.read_bytes()
     fw_size = len(firmware)
-    fw_crc32 = crc32(firmware)
+
+    # HMAC-SHA256 签名 (dev key = 32 bytes ASCII)
+    DEV_KEY = b"STM32F103-OTA-DEV-KEY-01234567"
+    fw_signed = firmware + struct.pack("<I", fw_size) + hmac.new(DEV_KEY, firmware, hashlib.sha256).digest()
+    fw_crc32 = crc32(fw_signed)
 
     print(f"╔══════════════════════════════════════════════╗")
     print(f"║   STM32-oop OTA Firmware Sender             ║")
     print(f"╠══════════════════════════════════════════════╣")
     print(f"║  Firmware: {fw_path.name:<32s} ║")
     print(f"║  Size:     {fw_size:>6} bytes ({fw_size/1024:.1f} KB)          ║")
+    print(f"║  +HMAC:    {len(fw_signed):>6} bytes signed                ║")
     print(f"║  CRC32:    0x{fw_crc32:08X}                      ║")
     print(f"║  Port:     {args.port:<32s} ║")
     print(f"║  Baud:     {args.baud}                              ║")
@@ -375,21 +382,21 @@ Examples:
     print(f"Connected to {args.port} @ {args.baud} baud")
 
     try:
-        # 1. Handshake
-        if not sender.handshake(fw_size):
+        # 1. Handshake (signed size = original + 36 bytes signature)
+        if not sender.handshake(len(fw_signed)):
             print("\n✘ OTA failed at handshake phase")
             sys.exit(1)
         print()
 
-        # 2. Send firmware
-        if not sender.send_firmware(firmware):
+        # 2. Send signed firmware
+        if not sender.send_firmware(fw_signed):
             print("\n✘ OTA failed during transfer")
             sys.exit(1)
         print()
 
         # 3. Verify
         if not args.no_verify:
-            if not sender.verify(fw_size, fw_crc32):
+            if not sender.verify(len(fw_signed), fw_crc32):
                 print("\n✘ OTA failed at verification")
                 sys.exit(1)
             print()
