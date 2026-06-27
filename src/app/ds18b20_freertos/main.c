@@ -166,15 +166,11 @@ static void cmd_btn(CLI *c, int argc, char **argv)
 
 static void cmd_light(CLI *c, int argc, char **argv) {
     (void)argc; (void)argv;
-    /* Raw debug: prove we entered the function */
-    while(!(USART1->SR&(1<<7))){} USART1->DR='L';
     float lux; uint8_t dout;
     if (sensor_read(light_sensor, &lux, &dout)) {
-        USART1->DR='1';
-        cli_printf(c, "Light(M7): %5.1f %%  DO=%u  (PA3 ADC + PB11 GPIO)\r\n",
+        cli_printf(c, "Light(M7): %5.1f %%  DO=%u  (PA3+PB11)\r\n",
                    (double)lux, (unsigned)dout);
     } else {
-        USART1->DR='0';
         cli_printf(c, "Light sensor read failed\r\n");
     }
 }
