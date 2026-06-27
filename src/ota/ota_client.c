@@ -9,11 +9,13 @@
  */
 #include "ota_client.h"
 #include "ota_flash.h"
+#include "ota_config.h"
 #include <string.h>
 
 /* ── 内部辅助 ─────────────────────────────────────────────────── */
 static uint8_t  rx_buf[OTA_FRAME_MAX_SIZE];
 static uint8_t  tx_buf[OTA_FRAME_MAX_SIZE];
+static uint32_t last_erased_page = 0xFFFFFFFF;  /* 追踪已擦页 */
 
 static void set_state(OtaClient *c, OtaClientState s) { c->state = s; }
 
@@ -34,12 +36,18 @@ void ota_client_init(OtaClient *client, OtaTransport *transport)
 
 void ota_client_start(OtaClient *client)
 {
-    /* 擦除应用区域 */
-    ota_flash_erase_range(OTA_APP_START, OTA_APP_SIZE);
-    client->current_addr  = OTA_APP_START;
+    /* 不提前擦除 — 收到数据后才逐页擦写, OTA 中断可恢复 */
+    last_erased_page       = 0xFFFFFFFF;
+    client->current_addr   = OTA_APP_START;
     client->received_bytes = 0;
     client->total_size     = 0;
     client->retry_count    = 0;
+
+    /* 无效化元数据 — 标记 OTA 未完成 (bootloader 检测到不会跳转) */
+    OtaMetadata meta;
+    memset(&meta, 0, sizeof(meta));
+    ota_flash_erase_range(OTA_METADATA_START, sizeof(meta));
+    ota_flash_write(OTA_METADATA_START, (const uint8_t *)&meta, sizeof(meta));
 
     /* 发送 HELLO */
     size_t len = ota_build_hello(tx_buf, sizeof(tx_buf), client->seq++);
@@ -90,6 +98,12 @@ bool ota_client_poll(OtaClient *client)
 
     case OTA_STATE_RECEIVING:
         if (type == OTA_CMD_DATA && plen > 0) {
+            /* 逐页擦除 — 只在需要时擦, OTA 中断可恢复 */
+            uint32_t page = client->current_addr & ~(OTA_FLASH_PAGE_SIZE - 1);
+            if (page != last_erased_page) {
+                ota_flash_erase_page(page);
+                last_erased_page = page;
+            }
             /* 写入 Flash */
             if (!ota_flash_write(client->current_addr, payload, plen)) {
                 client->error_code = OTA_ERR_FLASH_WRITE;

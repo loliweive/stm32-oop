@@ -167,18 +167,47 @@ static void cmd_led(CLI *c, int argc, char **argv)
 static void cmd_info(CLI *c, int argc, char **argv)
 {
     (void)argc; (void)argv;
-    cli_printf(c, "\r\n");
-    cli_printf(c, "  System:    STM32F103C8T6 (Blue Pill)\r\n");
     RccConfig rcc; rcc_get_config(&rcc);
-    cli_printf(c, "  Core:      Cortex-M3 @ %luMHz\r\n",
+
+    cli_printf(c, "\r\n");
+    cli_printf(c, "  MCU:       STM32F103C8T6 @ %luMHz\r\n",
                (unsigned long)(rcc.sysclk_hz / 1000000));
-    cli_printf(c, "  Flash:     64KB\r\n");
-    cli_printf(c, "  SRAM:      20KB\r\n");
-    cli_printf(c, "  RTOS:      FreeRTOS V11\r\n");
-    cli_printf(c, "  Tick:      %lu Hz\r\n", (unsigned long)configTICK_RATE_HZ);
-    cli_printf(c, "  Heap free: %lu bytes\r\n", (unsigned long)xPortGetFreeHeapSize());
-    cli_printf(c, "  Sensor:    %s (PA1)\r\n", sensor_name(sensor));
-    cli_printf(c, "  Button:    PB14 (pull-up, press=LOW)\r\n");
+    cli_printf(c, "  Flash:     64KB  SRAM: 20KB\r\n");
+    cli_printf(c, "  RTOS:      FreeRTOS V11, %luHz tick\r\n",
+               (unsigned long)configTICK_RATE_HZ);
+    cli_printf(c, "  Heap free: %lu bytes\r\n",
+               (unsigned long)xPortGetFreeHeapSize());
+
+    /* 外设状态 */
+    cli_printf(c, "\r\n  Peripherals:\r\n");
+
+    /* LED */
+    cli_printf(c, "  [LED]      PC13 (active low) — 'led on|off|toggle'\r\n");
+
+    /* Button */
+    uint8_t btn_state = gpio_get(&btn);
+    cli_printf(c, "  [BTN]      PB14 %s\r\n",
+               btn_state == 0 ? "PRESSED" : "released");
+
+    /* OLED */
+    cli_printf(c, "  [OLED]     SSD1306 128x64, I2C1 PB6/PB7 @0x3C\r\n");
+
+    /* Sensor */
+    cli_printf(c, "  [SENSOR]   %s (PA1)\r\n", sensor_name(sensor));
+
+    /* SPI Flash */
+    const SpiFlashInfo *fi = spi_flash_get_info(&spiflash);
+    if (fi->jedec_id != 0 && fi->jedec_id != 0xFFFFFF) {
+        cli_printf(c, "  [FLASH]    %s, %luKB, JEDEC 0x%06lX, SPI1 PA5/6/7+PB9\r\n",
+                   fi->name, (unsigned long)(fi->capacity / 1024),
+                   (unsigned long)fi->jedec_id);
+    } else {
+        cli_printf(c, "  [FLASH]    NOT DETECTED (SPI1 PA5/6/7+PB9)\r\n");
+    }
+
+    /* OTA */
+    cli_printf(c, "  [OTA]      ready — 'ota-start' to update\r\n");
+
     cli_printf(c, "\r\n");
 }
 
@@ -209,7 +238,7 @@ static void cmd_ota_start(CLI *c, int argc, char **argv)
     }
 
     cli_printf(c, "Starting OTA firmware update...\r\n");
-    cli_printf(c, "CLI suspended — send firmware now.\r\n\r\n");
+    cli_printf(c, "Send firmware now (60s timeout)...\r\n\r\n");
 
     ota_in_progress = true;
 
@@ -221,22 +250,42 @@ static void cmd_ota_start(CLI *c, int argc, char **argv)
     ota_client_init(&ota_client, &ota_xport);
     ota_client_start(&ota_client);
 
-    /* 驱动 OTA 状态机 (CLI 在此时阻塞) */
+    /* 超时控制: 每轮 ~135ms (recv 125ms + delay 10ms), 450 轮 ≈ 60s */
+    uint32_t timeout_rounds = 450;
+    uint32_t idle_rounds    = 0;
+    int last_pct = -1;
+    uint8_t last_remaining = 99;
+
     while (ota_client_poll(&ota_client)) {
-        vTaskDelay(pdMS_TO_TICKS(10));  /* 让出 CPU */
+        if (ota_client_get_state(&ota_client) >= OTA_STATE_RECEIVING) {
+            idle_rounds = 0;
+            int pct = ota_client_get_progress(&ota_client);
+            if (pct != last_pct) {
+                cli_printf(c, "  Progress: %d%%\r\n", pct);
+                last_pct = pct;
+            }
+        } else {
+            idle_rounds++;
+            uint8_t remaining = (uint8_t)((timeout_rounds - idle_rounds) / 7);  /* 7轮≈1s */
+            if (remaining < last_remaining) {
+                cli_printf(c, "  Waiting... ~%ds\r\n", remaining);
+                last_remaining = remaining;
+            }
+            if (idle_rounds >= timeout_rounds) break;
+        }
+        vTaskDelay(pdMS_TO_TICKS(10));
     }
 
-    if (ota_client_get_state(&ota_client) == OTA_STATE_COMPLETE) {
-        cli_printf(c, "\r\nOTA complete! Booting new firmware...\r\n");
-        ota_client_boot(&ota_client);
-        /* 不应到达 — boot 导致软复位 */
-    } else {
-        cli_printf(c, "\r\nOTA failed (error=%d). CLI restored.\r\n",
-                   ota_client.error_code);
+    if (ota_client_get_state(&ota_client) != OTA_STATE_COMPLETE) {
+        cli_printf(c, "\r\nOTA timeout — no data received. Cancelled.\r\n");
+        ota_in_progress = false;
+        cli_prompt(c);
+        return;
     }
 
-    ota_in_progress = false;
-    cli_prompt(c);
+    cli_printf(c, "\r\nOTA complete! Booting new firmware...\r\n");
+    ota_client_boot(&ota_client);
+    /* 不应到达 — boot 导致软复位 */
 }
 
 static void cmd_ota_status(CLI *c, int argc, char **argv)
@@ -460,7 +509,7 @@ int main(void)
     /* 初始化按键 (PB14, 上拉 — 按下=低电平) */
     rcc_enable_gpio('B');
     GpioPin_ctor(&btn, GPIOB, GPIO_PIN_14);
-    gpio_set_mode(&btn, GPIO_CNF_PP | GPIO_MODE_IN);
+    gpio_set_mode(&btn, 0x8 | GPIO_MODE_IN);  /* CNF=10: input with pull-up */
     gpio_set(&btn, 1);
     DLOG("CP2: BTN ok");
 
@@ -489,8 +538,8 @@ int main(void)
     }
     DLOG("CP3: OLED ok");
 
-    /* 初始化 SPI Flash — skip if not connected */
-#if 0
+    /* 初始化 SPI Flash */
+#if 1
     rcc_enable_spi(1);
     {
         GpioPin sck, miso, mosi;
@@ -511,8 +560,8 @@ int main(void)
     DLOG("CP5: Q ok");
 
     /* 创建任务 */
-    xTaskCreate(task_sensor,  "Sensor", 128, NULL, 2, NULL);
-    xTaskCreate(task_cli,     "CLI",    512, NULL, 1, NULL);
+    xTaskCreate(task_sensor,  "Sensor", 128, NULL, 1, NULL);
+    xTaskCreate(task_cli,     "CLI",    512, NULL, 2, NULL);
     DLOG("CP6: tasks ok");
 
     vTaskStartScheduler();
