@@ -105,8 +105,8 @@ static void cmd_help(CLI *c, int argc, char **argv)
 static void cmd_iwdg(CLI *c, int argc, char **argv)
 {
     (void)argc; (void)argv;
-    cli_printf(c, "IWDG test: stop feeding, expect reset in 5-10s...\r\n");
-    /* SysTick 精确计数 15s, IWDG 4-9s 内必触发 */
+    cli_printf(c, "IWDG test: stop feeding, expect reset in ~3s...\r\n");
+    /* SysTick 精确计数 15s, IWDG 0.5-4s 内必触发 (LSI 17-40kHz) */
     uint32_t ms = 0;
     while (ms < 15000) {
         if (SysTick->CTRL & (1<<16)) ms++;
