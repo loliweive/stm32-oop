@@ -43,3 +43,5 @@ reference/
 
 # Dev worktrees
 .dev/
+src/app/freertos_test/
+src/app/uart_test_raw/
