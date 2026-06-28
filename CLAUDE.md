@@ -250,7 +250,17 @@ openocd -f interface/stlink.cfg -f target/stm32f1x.cfg \
 
 ---
 
-## 9. 已知问题 & 注意事项
+## 9. 已知问题 & 注意事项 & 铁律
+
+### 铁律 (违反必出 bug)
+1. **禁止 `%f`**: newlib-nano 不支持，用 `%d.%d` 整数拆分
+2. **禁止 `abs()`**: newlib-nano 会 crash，用 `if(x<0)x=-x`
+3. **禁止 `GPIO_CNF_PP \| GPIO_MODE_IN`**: =0x00(模拟模式), 输入上拉用 `0x8 \| GPIO_MODE_IN`
+4. **禁止 busy-wait 定时**: volatile loop ~7cyc/iter, 不准。用 SysTick/DWT/FreeRTOS tick
+5. **禁止传感器任务调 `cli_printf`**: 跨任务重入 crash。传感器只写队列，CLI 任务读队列输出
+6. **禁止在 `#if` guard 上做 sed 全局替换**: 会破坏预处理分支
+
+### 已知问题
 
 1. **Git 推送**: 必须用 token-in-URL 方式, 见 §7
 2. **I2C/SPI/ADC 驱动**: 使用了 CMSIS 位定义 (代码审查后修复), 但仍缺少超时保护
