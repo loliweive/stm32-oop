@@ -31,7 +31,7 @@
 #define SENSOR_DHT11    2
 #define SENSOR_LIGHT    3
 #define SENSOR_BMP280   4
-#define SENSOR_TYPE     SENSOR_DS18B20   /* <── 改这行切换传感器! */
+#define SENSOR_TYPE     SENSOR_DHT11   /* <── 改这行切换传感器! */
 
 #include "onewire.h"
 #include "ds18b20.h"
