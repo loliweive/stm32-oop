@@ -537,13 +537,12 @@ static void task_cli(void *params)
                 int ti=(int)sr.temp_c, tf=(int)((sr.temp_c-ti)*10);
                 if(tf<0)tf=-tf;
                 if (sr.humidity!=255)
-                    cli_printf(&cli, "[%6lus] %d.%d C  %u %%RH  (%s)\r\n",
-                        (unsigned long)(sr.timestamp_ms/1000),ti,tf,
-                        (unsigned)sr.humidity, sensor_name(sensor));
+                    cli_printf(&cli, "  %d.%dC  %d%%  %lus\r\n",
+                        ti, tf, (unsigned)sr.humidity,
+                        (unsigned long)(sr.timestamp_ms/1000));
                 else
-                    cli_printf(&cli, "[%6lus] %d.%d C  (%s)\r\n",
-                        (unsigned long)(sr.timestamp_ms/1000),ti,tf,
-                        sensor_name(sensor));
+                    cli_printf(&cli, "  %d.%dC  %lus\r\n",
+                        ti, tf, (unsigned long)(sr.timestamp_ms/1000));
             }
         }
     }
