@@ -36,13 +36,21 @@ void rcc_set_sysclk(RccClockSource src, uint8_t pll_mul)
         }
     }
 
-    /* 3. Switch SYSCLK to desired source */
+    /* 3. Configure AHB/APB prescalers
+     *    AHB = SYSCLK (HPRE=0)
+     *    APB2 = AHB (PPRE2=0) — max 72MHz ✓
+     *    APB1 = AHB/2 (PPRE1=4) — max 36MHz (spec limit!)
+     */
     uint32_t cfgr = RCC->CFGR;
-    cfgr &= ~((uint32_t)0x3); /* Clear SW bits (use hard mask for consistency) */
+    cfgr &= ~(0x7 << 8);  /* Clear PPRE1[2:0] */
+    cfgr |= (0x4 << 8);   /* PPRE1 = 100 = /2 → APB1 max 36MHz */
+
+    /* 4. Switch SYSCLK to desired source */
+    cfgr &= ~((uint32_t)0x3); /* Clear SW bits */
     switch (src) {
         case RCC_PLL: cfgr |= RCC_CFGR_SW_PLL; break;
         case RCC_HSE: cfgr |= RCC_CFGR_SW_HSE; break;
-        default:                                           break; /* HSI */
+        default:                                           break;
     }
     RCC->CFGR = cfgr;
 
