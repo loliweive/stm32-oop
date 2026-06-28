@@ -70,7 +70,10 @@
 #define configCHECK_FOR_STACK_OVERFLOW          1  /* 栈溢出检测 */
 
 /* ── 软件定时器 (本阶段不使用) ────────────────────────────── */
-#define configUSE_TIMERS                        0
+#define configUSE_TIMERS                        1   /* IWDG feed */
+#define configTIMER_TASK_PRIORITY                3   /* highest, ensure feed */
+#define configTIMER_QUEUE_LENGTH                 4
+#define configTIMER_TASK_STACK_DEPTH            128
 
 /* ── 中断优先级映射 ────────────────────────────────────────── */
 /**

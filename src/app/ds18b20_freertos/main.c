@@ -13,6 +13,7 @@
 #include "FreeRTOS.h"
 #include "task.h"
 #include "queue.h"
+#include "timers.h"
 
 #include "rcc.h"
 #include "gpio.h"
@@ -95,8 +96,12 @@ static void uart_cli_write(const char *str, size_t len)
  *  CLI 命令实现
  * ═══════════════════════════════════════════════════════════════ */
 
-/* ── FreeRTOS idle hook: 喂狗 ─────────────────────── */
+/* ── FreeRTOS idle hook: 喂狗 (可能不触发, 兜底用) ── */
 void vApplicationIdleHook(void) { iwdg_feed(); }
+
+/* ── 软件定时器喂狗回调 (100% 可靠, FreeRTOS 内核调度) ── */
+static TimerHandle_t iwdg_timer;
+static void _iwdg_timer_cb(TimerHandle_t t) { (void)t; iwdg_feed(); }
 
 static void cmd_help(CLI *c, int argc, char **argv)
 {
@@ -630,7 +635,10 @@ int main(void)
     DLOG("CP6: tasks ok");
 
     /* IWDG: 必须在调度器启动前最后一刻初始化, 否则提前超时复位 */
-    iwdg_init(6, 0xFFF);  /* PR=6 /256, RLR=4095: ~10-26s (LSI 17-40kHz). 防误复位 */
+    iwdg_init(6, 0xFFF);  /* PR=6 /256, RLR=4095: ~10-26s timeout */
+    /* 软件定时器每 1s 喂狗 (优先级3, 高于所有任务) */
+    iwdg_timer = xTimerCreate("iwdg", pdMS_TO_TICKS(1000), pdTRUE, NULL, _iwdg_timer_cb);
+    xTimerStart(iwdg_timer, 0);;  /* PR=6 /256, RLR=4095: ~10-26s (LSI 17-40kHz). 防误复位 */
     DLOG("CP7: IWDG ok");
 
     vTaskStartScheduler();
