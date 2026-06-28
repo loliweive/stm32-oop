@@ -180,6 +180,19 @@ TOKEN=$(gh auth token) && \
 ### 分支
 - `main` — 唯一分支, 所有开发在此
 
+### 分支工作流 (强制)
+1. **新功能 → 新分支**: `git checkout -b feat/<name>`
+2. **在分支上开发和测试** — 不要直接在 main 上改
+3. **测试完全通过后** → merge 到 main
+4. **最后推送远程**
+
+```
+main (稳定)
+  ├── feat/xxx (开发+测试)
+  ├── fix/xxx  (bug修复)
+  └── (merge 回 main 后删除)
+```
+
 ### 提交规范
 - `feat:` 新功能
 - `fix:` 修复
