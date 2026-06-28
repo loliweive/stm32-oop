@@ -538,14 +538,20 @@ static void task_cli(void *params)
         /* temp-stream: 从队列读并输出 (CLI context, 无重入风险) */
         if (stream_mode) {
             TempReading sr;
+            static uint32_t last_ts = 0;
             if (xQueueReceive(temp_queue, &sr, 0) == pdTRUE && sr.valid) {
-                int ti=(int)sr.temp_c, tf=(int)((sr.temp_c-ti)*10);
-                if(tf<0)tf=-tf;
-                if (sr.humidity!=255)
-                    cli_printf(&cli, "DHT11: %d.%d C  %d %%RH\r\n",
-                        ti, tf, (unsigned)sr.humidity);
-                else
-                    cli_printf(&cli, "DHT11: %d.%d C\r\n", ti, tf);
+                if (sr.timestamp_ms != last_ts) {
+                    last_ts = sr.timestamp_ms;
+                    /* Raw UART — bypass cli_printf, no crash risk */
+                    #define _tx(c) do{while(!(USART1->SR&(1<<7))){}USART1->DR=(c);}while(0)
+                    _tx('D');_tx('H');_tx('T');_tx(':');_tx(' ');
+                    int ti=(int)sr.temp_c; if(ti>=10)_tx('0'+ti/10);
+                    _tx('0'+ti%10);_tx('.');_tx('0');_tx('C');_tx(' ');
+                    if(sr.humidity!=255){int h=sr.humidity; if(h>=100)_tx('0'+h/100);
+                     if(h>=10)_tx('0'+(h/10)%10); _tx('0'+h%10); _tx('%');}
+                    _tx('\r');_tx('\n');
+                    #undef _tx
+                }
             }
         }
     }
