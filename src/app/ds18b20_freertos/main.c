@@ -485,20 +485,7 @@ static void task_sensor(void *params)
 
         gpio_set(&led, 1);
 
-        if (stream_mode && r.valid) {
-            int ti = (int)r.temp_c, tf = (int)((r.temp_c-ti)*10);
-            if (tf < 0) tf = -tf;
-            if (r.humidity != 255) {
-                cli_printf(&cli, "[%6lus] %d.%d C  %u %%RH  (%s)\r\n",
-                           (unsigned long)(r.timestamp_ms / 1000),
-                           ti, tf, (unsigned)r.humidity,
-                           sensor_name(sensor));
-            } else {
-                cli_printf(&cli, "[%6lus] %d.%d C  (%s)\r\n",
-                           (unsigned long)(r.timestamp_ms / 1000),
-                           ti, tf, sensor_name(sensor));
-            }
-        }
+        /* stream output handled by CLI task (queue-based, no reentrancy risk) */
         vTaskDelay(pdMS_TO_TICKS(2000));
     }
 }
@@ -544,7 +531,24 @@ static void task_cli(void *params)
             __asm__("nop");
         }
         vTaskDelay(pdMS_TO_TICKS(5));
-        iwdg_feed();  /* CLI 轮询路径也喂狗, 确保不误复位 */
+        iwdg_feed();
+
+        /* temp-stream: 从队列读并输出 (CLI context, 无重入风险) */
+        if (stream_mode) {
+            TempReading sr;
+            if (xQueueReceive(temp_queue, &sr, 0) == pdTRUE && sr.valid) {
+                int ti=(int)sr.temp_c, tf=(int)((sr.temp_c-ti)*10);
+                if(tf<0)tf=-tf;
+                if (sr.humidity!=255)
+                    cli_printf(&cli, "[%6lus] %d.%d C  %u %%RH  (%s)\r\n",
+                        (unsigned long)(sr.timestamp_ms/1000),ti,tf,
+                        (unsigned)sr.humidity, sensor_name(sensor));
+                else
+                    cli_printf(&cli, "[%6lus] %d.%d C  (%s)\r\n",
+                        (unsigned long)(sr.timestamp_ms/1000),ti,tf,
+                        sensor_name(sensor));
+            }
+        }
     }
 }
 
