@@ -107,10 +107,10 @@ static void cmd_help(CLI *c, int argc, char **argv)
 static void cmd_iwdg(CLI *c, int argc, char **argv)
 {
     (void)argc; (void)argv;
-    cli_printf(c, "IWDG test: stop feeding, expect reset in ~3s...\r\n");
-    /* SysTick 精确计数 15s, IWDG 0.5-4s 内必触发 (LSI 17-40kHz) */
+    cli_printf(c, "IWDG test: stop feeding, expect reset in ~10s...\r\n");
+    /* SysTick 精确计数 30s, IWDG ~10-26s 触发 (LSI 17-40kHz, RLR=4095) */
     uint32_t ms = 0;
-    while (ms < 15000) {
+    while (ms < 30000) {
         if (SysTick->CTRL & (1<<16)) ms++;
     }
     cli_printf(c, "IWDG did NOT reset — watchdog may be disabled\r\n");
