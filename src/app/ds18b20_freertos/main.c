@@ -482,7 +482,7 @@ static void task_sensor(void *params)
         gpio_set(&led, 1);
 
         /* stream output handled by CLI task (queue-based, no reentrancy risk) */
-        vTaskDelay(pdMS_TO_TICKS(2000));
+        vTaskDelay(pdMS_TO_TICKS(stream_mode ? 1000 : 2000));  /* stream=1s, normal=2s */
     }
 }
 
