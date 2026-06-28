@@ -5,7 +5,7 @@
  * ── 传感器切换 ─────────────────────────────────────────────
  *   修改下面的 SENSOR_TYPE 宏即可切换传感器:
  *     SENSOR_DS18B20  → M2  DS18B20 (OneWire, -55~125°C, 0.0625°C)
- *     SENSOR_DS18B20    → M10 DHT11   (自有协议, 0~50°C + 湿度)
+ *     SENSOR_DHT11    → M10 DHT11   (自有协议, 0~50°C + 湿度)
  *   两个模块共用 PA1, 可插拔替换, 编译时选择。
  */
 
@@ -28,10 +28,10 @@
  *  传感器选型 — 改这一行即可切换!
  * ═══════════════════════════════════════════════════════════════ */
 #define SENSOR_DS18B20  1
-#define SENSOR_DS18B20    2
+#define SENSOR_DHT11    2
 #define SENSOR_LIGHT    3
 #define SENSOR_BMP280   4
-#define SENSOR_TYPE     SENSOR_DS18B20   /* <── 改这行切换传感器! */
+#define SENSOR_TYPE     SENSOR_DHT11   /* <── 改这行切换传感器! */
 
 #include "onewire.h"
 #include "ds18b20.h"
@@ -422,10 +422,10 @@ static void task_sensor(void *params)
     TempReading r;
 
     /* ── 传感器创建 — 唯一的编译时分支! ──────────────────── */
-#if SENSOR_TYPE == SENSOR_DS18B20
+#if SENSOR_TYPE == SENSOR_DHT11
     ow_init(&ow_bus, SENSOR_PORT, SENSOR_PIN);
     sensor = ds18b20_create(&ds18b20_obj, &ow_bus);
-#elif SENSOR_TYPE == SENSOR_DS18B20
+#elif SENSOR_TYPE == SENSOR_DHT11
     sensor = dht11_create(&dht11_obj, SENSOR_PORT, SENSOR_PIN);
     vTaskDelay(pdMS_TO_TICKS(1000));  /* DHT11 上电等待 1s */
 #elif SENSOR_TYPE == SENSOR_LIGHT
