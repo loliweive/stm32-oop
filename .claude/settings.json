@@ -3,8 +3,12 @@
     "PostToolUse": [
       {
         "matcher": "Write|Edit",
-        "command": "if echo \"$FILE_PATH\" | grep -qE '\\.(c|h)$'; then clang-format -i --style=file \"$FILE_PATH\" 2>/dev/null || true; fi",
-        "description": "Format C source files on save"
+        "hooks": [
+          {
+            "type": "command",
+            "command": "if echo \"$FILE_PATH\" | grep -qE '\\.(c|h)$'; then clang-format -i --style=file \"$FILE_PATH\" 2>/dev/null || true; fi"
+          }
+        ]
       }
     ]
   }
