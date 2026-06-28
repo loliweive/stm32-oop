@@ -422,7 +422,7 @@ static void task_sensor(void *params)
     TempReading r;
 
     /* ── 传感器创建 — 唯一的编译时分支! ──────────────────── */
-#if SENSOR_TYPE == SENSOR_DS18B20
+#if SENSOR_TYPE == SENSOR_DHT11
     ow_init(&ow_bus, SENSOR_PORT, SENSOR_PIN);
     sensor = ds18b20_create(&ds18b20_obj, &ow_bus);
 #elif SENSOR_TYPE == SENSOR_DHT11
