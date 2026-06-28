@@ -481,8 +481,18 @@ static void task_sensor(void *params)
 
         gpio_set(&led, 1);
 
-        /* stream output handled by CLI task (queue-based, no reentrancy risk) */
-        vTaskDelay(pdMS_TO_TICKS(stream_mode ? 1000 : 2000));  /* stream=1s, normal=2s */
+        /* stream: sensor task directly outputs (raw UART, no crash risk) */
+        if (stream_mode) {
+            #define _tx(c) do{while(!(USART1->SR&(1<<7))){}USART1->DR=(c);}while(0)
+            _tx('D');_tx('H');_tx('T');_tx(':');_tx(' ');
+            int ti=(int)r.temp_c; if(ti>=10)_tx('0'+ti/10);
+            _tx('0'+ti%10);_tx('.');_tx('0');_tx('C');_tx(' ');
+            if(r.humidity!=255){int h=r.humidity; if(h>=100)_tx('0'+h/100);
+             if(h>=10)_tx('0'+(h/10)%10);_tx('0'+h%10);_tx('%');}
+            _tx('\r');_tx('\n');
+            #undef _tx
+        }
+        vTaskDelay(pdMS_TO_TICKS(stream_mode ? 1000 : 2000));
     }
 }
 
