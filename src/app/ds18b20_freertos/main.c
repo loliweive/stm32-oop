@@ -147,15 +147,7 @@ static void cmd_temp_stream(CLI *c, int argc, char **argv)
 {
     (void)c; (void)argc; (void)argv;
     stream_mode = true;
-    cli_printf(c, "Continuous temperature output started.\r\n");
-    cli_printf(c, "Type 'temp-stop' to stop.\r\n");
-}
-
-static void cmd_temp_stop(CLI *c, int argc, char **argv)
-{
-    (void)c; (void)argc; (void)argv;
-    stream_mode = false;
-    cli_printf(c, "Temperature stream stopped.\r\n");
+    cli_printf(c, "Stream started. Press ESC to stop.\r\n");
 }
 
 static void cmd_btn(CLI *c, int argc, char **argv)
@@ -410,8 +402,7 @@ static const CLICommand commands[] = {
     { "reset",       cmd_reset,       "Software reset MCU" },
     { "runtime",     cmd_uptime,      "Show system runtime" },
     { "temp",        cmd_temp,        "Read temperature once" },
-    { "temp-stream", cmd_temp_stream, "Start continuous temp output" },
-    { "temp-stop",   cmd_temp_stop,   "Stop continuous temp output" },
+    { "temp-stream", cmd_temp_stream, "Stream temp (ESC to stop)" },
     { NULL, NULL, NULL }
 };
 
@@ -525,6 +516,12 @@ static void task_cli(void *params)
         /* 排空 UART RX — 避免 ESC 序列丢字节 */
         for (int timeout = 2000; timeout > 0; timeout--) {
             if (uart_recv(&uart, &byte)) {
+                if (byte == 0x1B && stream_mode) {  /* ESC 退出流模式 */
+                    stream_mode = false;
+                    cli_printf(&cli, "\r\nStream stopped (ESC).\r\n");
+                    cli_prompt(&cli);
+                    continue;
+                }
                 cli_feed(&cli, (char)byte);
                 timeout = 2000;
             }
