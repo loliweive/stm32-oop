@@ -5,10 +5,20 @@
 #include "dht11.h"
 #include "stm32f103xb.h"
 
-/* ── 延时 + GPIO 位操作 (同原实现) ──────────────────────── */
+/* ── DWT 硬件周期计数器 µs 延时 (Cortex-M3, 绝对精确) ──── */
+static void _dwt_delay_us(uint32_t us) {
+    uint32_t t = *(volatile uint32_t*)0xE0001004 + us * 72;
+    while ((int32_t)(*(volatile uint32_t*)0xE0001004 - t) < 0) {}
+}
 #define DELAY_US(us) do { \
-    volatile uint32_t _c = (uint32_t)(us) * 6; \
-    while (_c--) { __asm__ volatile("nop"); } \
+    static int _init = 0; \
+    if (!_init) { \
+        *(volatile uint32_t*)0xE000EDFC |= (1<<24); /* CoreDebug DEMCR: TRCENA */ \
+        *(volatile uint32_t*)0xE0001004 = 0;         /* DWT CYCCNT = 0 */ \
+        *(volatile uint32_t*)0xE0001000 |= 1;         /* DWT CTRL: CYCCNTENA */ \
+        _init = 1; \
+    } \
+    _dwt_delay_us(us); \
 } while(0)
 
 static void _pin_out(DHT11 *d)  { GPIO_Type *g=(GPIO_Type*)d->port; uint32_t p=0; uint16_t m=d->pin; while(!(m&(1<<p)))p++; if(p<8)g->CRL=(g->CRL&~(0xFUL<<(p*4)))|(0x3UL<<(p*4)); else g->CRH=(g->CRH&~(0xFUL<<((p-8)*4)))|(0x3UL<<((p-8)*4)); }
