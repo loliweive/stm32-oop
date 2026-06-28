@@ -126,19 +126,17 @@ static void cmd_temp(CLI *c, int argc, char **argv)
     (void)argc; (void)argv;
 
     TempReading r;
-    if (xQueueReceive(temp_queue, &r, 0) == pdTRUE) {
+    if (xQueueReceive(temp_queue, &r, pdMS_TO_TICKS(2000)) == pdTRUE) {
         if (r.valid) {
             int ti = (int)r.temp_c, tf = (int)((r.temp_c-ti)*10);
             if (tf < 0) tf = -tf;
             if (r.humidity != 255) {
-                cli_printf(c, "%s: %d.%d C  %u %%RH  (t=%lus)\r\n",
+                cli_printf(c, "%s: %d.%d C  %u %%RH\r\n",
                            sensor_name(sensor), ti, tf,
-                           (unsigned)r.humidity,
-                           (unsigned long)(r.timestamp_ms / 1000));
+                           (unsigned)r.humidity);
             } else {
-                cli_printf(c, "%s: %d.%d C  (t=%lus)\r\n",
-                           sensor_name(sensor), ti, tf,
-                           (unsigned long)(r.timestamp_ms / 1000));
+                cli_printf(c, "%s: %d.%d C\r\n",
+                           sensor_name(sensor), ti, tf);
             }
         } else {
             cli_printf(c, "Sensor error — read failed\r\n");
