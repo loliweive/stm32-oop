@@ -5,20 +5,15 @@
 #include "dht11.h"
 #include "stm32f103xb.h"
 
-/* ── DWT 硬件周期计数器 µs 延时 (Cortex-M3, 绝对精确) ──── */
-static void _dwt_delay_us(uint32_t us) {
-    uint32_t t = *(volatile uint32_t*)0xE0001004 + us * 72;
-    while ((int32_t)(*(volatile uint32_t*)0xE0001004 - t) < 0) {}
-}
+/* SysTick µs 延时 — 用 FreeRTOS 已有的 SysTick (72MHz, LOAD=71999) */
 #define DELAY_US(us) do { \
-    static int _init = 0; \
-    if (!_init) { \
-        *(volatile uint32_t*)0xE000EDFC |= (1<<24); /* CoreDebug DEMCR: TRCENA */ \
-        *(volatile uint32_t*)0xE0001004 = 0;         /* DWT CYCCNT = 0 */ \
-        *(volatile uint32_t*)0xE0001000 |= 1;         /* DWT CTRL: CYCCNTENA */ \
-        _init = 1; \
-    } \
-    _dwt_delay_us(us); \
+    uint32_t _target = us * 72;  /* 72 cycles/µs */ \
+    uint32_t _start = *(volatile uint32_t*)0xE000E018; /* SysTick VAL */ \
+    uint32_t _elapsed; \
+    do { \
+        uint32_t _now = *(volatile uint32_t*)0xE000E018; \
+        _elapsed = (_start >= _now) ? (_start - _now) : (_start + 72000 - _now); \
+    } while (_elapsed < _target); \
 } while(0)
 
 static void _pin_out(DHT11 *d)  { GPIO_Type *g=(GPIO_Type*)d->port; uint32_t p=0; uint16_t m=d->pin; while(!(m&(1<<p)))p++; if(p<8)g->CRL=(g->CRL&~(0xFUL<<(p*4)))|(0x3UL<<(p*4)); else g->CRH=(g->CRH&~(0xFUL<<((p-8)*4)))|(0x3UL<<((p-8)*4)); }
@@ -34,11 +29,11 @@ bool dht11_raw_read(DHT11 *dht)
     uint8_t data[5] = {0};
 
     __disable_irq();
-    _pin_out(dht); _pin_lo(dht); DELAY_US(18000);
-    _pin_hi(dht);  DELAY_US(30);
+    _pin_out(dht); _pin_lo(dht); DELAY_US(25000);
+    _pin_hi(dht);  DELAY_US(50);
     _pin_in(dht);
 
-    uint32_t to = 10000;
+    uint32_t to = 50000;
     while (_pin_rd(dht)==1 && --to){} if(!to){__enable_irq();return false;}
     DELAY_US(80);
     to=10000; while(_pin_rd(dht)==0&&--to){} if(!to){__enable_irq();return false;}
