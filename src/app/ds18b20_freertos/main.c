@@ -633,7 +633,7 @@ int main(void)
     DLOG("CP6: tasks ok");
 
     /* IWDG: 必须在调度器启动前最后一刻初始化, 否则提前超时复位 */
-    iwdg_init(6, 400);  /* PR=6 /256, RLR=400: 3.8-8.9s (LSI 17-40kHz). idle+CLI 双路喂狗 */
+    iwdg_init(6, 0xFFF);  /* PR=6 /256, RLR=4095: ~10-26s (LSI 17-40kHz). 防误复位 */
     DLOG("CP7: IWDG ok");
 
     vTaskStartScheduler();
