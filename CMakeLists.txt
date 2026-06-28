@@ -38,8 +38,11 @@ elseif(BUILD_MODE STREQUAL "stm32f103")
         "${STM32_SRC_DIR}/core"
         "${STM32_SRC_DIR}/hal"
         "${STM32_SRC_DIR}/utils"
-        "${STM32_SRC_DIR}/app/oled_test"
+        "${STM32_SRC_DIR}/cli"
+        "${STM32_SRC_DIR}/sensor"
         "${STM32_SRC_DIR}/display"
+        "${STM32_SRC_DIR}/storage"
+        "${STM32_SRC_DIR}/app/bare_cli"
     )
 
     add_executable(${PROJECT_NAME}
@@ -55,11 +58,19 @@ elseif(BUILD_MODE STREQUAL "stm32f103")
         ${STM32_SRC_DIR}/hal/gpio.c
         ${STM32_SRC_DIR}/hal/rcc.c
         ${STM32_SRC_DIR}/hal/i2c.c
+        ${STM32_SRC_DIR}/hal/uart.c
+        ${STM32_SRC_DIR}/hal/spi.c
+        ${STM32_SRC_DIR}/hal/adc.c
+        ${STM32_SRC_DIR}/hal/iwdg.c
+        ${STM32_SRC_DIR}/sensor/dht11.c
+        ${STM32_SRC_DIR}/sensor/light_sensor.c
         ${STM32_SRC_DIR}/display/ssd1306.c
         ${STM32_SRC_DIR}/display/font8x16.c
         ${STM32_SRC_DIR}/display/font6x8.c
         ${STM32_SRC_DIR}/display/font16x16.c
-        ${STM32_SRC_DIR}/app/oled_test/main.c
+        ${STM32_SRC_DIR}/storage/spi_flash.c
+        ${STM32_SRC_DIR}/cli/cli.c
+        ${STM32_SRC_DIR}/app/bare_cli/main.c
     )
 
     target_include_directories(${PROJECT_NAME} PRIVATE ${STM32_INCLUDES})
