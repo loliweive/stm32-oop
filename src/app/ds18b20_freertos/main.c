@@ -123,14 +123,16 @@ static void cmd_temp(CLI *c, int argc, char **argv)
     TempReading r;
     if (xQueueReceive(temp_queue, &r, 0) == pdTRUE) {
         if (r.valid) {
+            int ti = (int)r.temp_c, tf = (int)((r.temp_c-ti)*10);
+            if (tf < 0) tf = -tf;
             if (r.humidity != 255) {
-                cli_printf(c, "%s: %+d.%d C  %2u %%RH  (t=%lus)\r\n",
-                           sensor_name(sensor), (int)r.temp_c, abs((int)((r.temp_c-(int)r.temp_c)*10)),
+                cli_printf(c, "%s: %d.%d C  %u %%RH  (t=%lus)\r\n",
+                           sensor_name(sensor), ti, tf,
                            (unsigned)r.humidity,
                            (unsigned long)(r.timestamp_ms / 1000));
             } else {
-                cli_printf(c, "%s: %+d.%d C  (t=%lus)\r\n",
-                           sensor_name(sensor), (int)r.temp_c, abs((int)((r.temp_c-(int)r.temp_c)*10)),
+                cli_printf(c, "%s: %d.%d C  (t=%lus)\r\n",
+                           sensor_name(sensor), ti, tf,
                            (unsigned long)(r.timestamp_ms / 1000));
             }
         } else {
@@ -463,18 +465,13 @@ static void task_sensor(void *params)
         /* 刷新 OLED 显示 */
         if (r.valid) {
             char l1[22], l2[22];
-            snprintf(l1, sizeof(l1), "%d.%d C",
-                     (int)r.temp_c, abs((int)((r.temp_c-(int)r.temp_c)*10)));
-            snprintf(l2, sizeof(l2), "%s",
-                     r.humidity != 255
-                     ? ""  /* 占位 */
-                     : "");
+            int ti = (int)r.temp_c, tf = (int)((r.temp_c-ti)*10);
+            if (tf < 0) tf = -tf;
+            snprintf(l1, sizeof(l1), "%d.%d C", ti, tf);
+            snprintf(l2, sizeof(l2), "%s", sensor_name(sensor));
             if (r.humidity != 255) {
                 snprintf(l1, sizeof(l1), "%d.%d C  %u%%RH",
-                         (int)r.temp_c, abs((int)((r.temp_c-(int)r.temp_c)*10)), (unsigned)r.humidity);
-                snprintf(l2, sizeof(l2), "%s", sensor_name(sensor));
-            } else {
-                snprintf(l2, sizeof(l2), "%s", sensor_name(sensor));
+                         ti, tf, (unsigned)r.humidity);
             }
             {
                 OledDisplay *d = &oled.base;
@@ -489,15 +486,17 @@ static void task_sensor(void *params)
         gpio_set(&led, 1);
 
         if (stream_mode && r.valid) {
+            int ti = (int)r.temp_c, tf = (int)((r.temp_c-ti)*10);
+            if (tf < 0) tf = -tf;
             if (r.humidity != 255) {
-                cli_printf(&cli, "[%6lus] %+d.%d C  %2u %%RH  (%s)\r\n",
+                cli_printf(&cli, "[%6lus] %d.%d C  %u %%RH  (%s)\r\n",
                            (unsigned long)(r.timestamp_ms / 1000),
-                           (int)r.temp_c, abs((int)((r.temp_c-(int)r.temp_c)*10)), (unsigned)r.humidity,
+                           ti, tf, (unsigned)r.humidity,
                            sensor_name(sensor));
             } else {
-                cli_printf(&cli, "[%6lus] %+d.%d C  (%s)\r\n",
+                cli_printf(&cli, "[%6lus] %d.%d C  (%s)\r\n",
                            (unsigned long)(r.timestamp_ms / 1000),
-                           (int)r.temp_c, abs((int)((r.temp_c-(int)r.temp_c)*10)), sensor_name(sensor));
+                           ti, tf, sensor_name(sensor));
             }
         }
         vTaskDelay(pdMS_TO_TICKS(2000));
