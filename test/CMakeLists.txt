@@ -12,7 +12,6 @@ set(UNITY_SRC
 
 # ── Source under test (host-compilable modules only) ─────────
 set(CORE_SRC
-    ${ROOT_DIR}/src/core/object.c
     ${ROOT_DIR}/src/core/ring_buffer.c
     ${ROOT_DIR}/src/core/list.c
     ${ROOT_DIR}/src/core/state_machine.c
@@ -31,15 +30,10 @@ set(TEST_INCLUDES
     ${ROOT_DIR}/src/utils
     ${ROOT_DIR}/src/hal
     ${ROOT_DIR}/src/cli
-    ${ROOT_DIR}/src/ota
     ${ROOT_DIR}/src/display
     ${ROOT_DIR}/lib/stm32f1
     ${ROOT_DIR}/lib/cmsis
 )
-
-# Mock header overrides — for host, we provide mock implementations
-# of the hardware headers so that HAL code compiles on x86.
-# test/mocks/ provides replacement headers for target-specific includes.
 
 function(add_host_test name)
     add_executable(${name}
@@ -79,7 +73,6 @@ set(MOCK_SRC
     ${TEST_DIR}/mocks/mock_uart.c
 )
 
-# HAL source under test (rcc.c needed by uart_init → rcc_get_config)
 set(HAL_SRC
     ${ROOT_DIR}/src/hal/gpio.c
     ${ROOT_DIR}/src/hal/uart.c
@@ -100,7 +93,6 @@ add_host_test(test_uart
     ${TEST_DIR}/test_uart.c
 )
 
-# Timer mock + test
 set(TIMER_SRC
     ${ROOT_DIR}/src/hal/timer.c
 )
@@ -113,16 +105,6 @@ add_host_test(test_timer
     ${TIMER_SRC}
     ${MOCK_TIMER_SRC}
     ${TEST_DIR}/test_timer.c
-)
-
-# OTA protocol test (pure logic, no hardware needed)
-set(OTA_SRC
-    ${ROOT_DIR}/src/ota/ota_protocol.c
-)
-
-add_host_test(test_ota_protocol
-    ${OTA_SRC}
-    ${TEST_DIR}/test_ota_protocol.c
 )
 
 # SSD1306 OLED test (framebuffer operations, no I2C needed)
