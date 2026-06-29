@@ -16,9 +16,11 @@ typedef struct { uint32_t CR1, CR2, SMCR, DIER, SR, EGR, CCMR1, CCMR2, CCER, CNT
 typedef struct { uint32_t CR1, CR2, OAR1, OAR2, DR, SR1, SR2, CCR, TRISE; } I2C_Type;
 typedef struct { uint32_t CR1, CR2, SR, DR, CRCPR, RXCRCR, TXCRCR; } SPI_Type;
 typedef struct { uint32_t SR, CR1, CR2, SMPR1, SMPR2, JOFR[4], HTR, LTR, SQR1, SQR2, SQR3, JSQR, JDR[4], DR; } ADC_Type;
+typedef struct { uint32_t KR, PR, RLR, SR; } IWDG_Type;
 typedef struct { volatile uint32_t ACR; } FLASH_Type;
 
 /* ── GPIO pin masks ─────────────────────────────────────────── */
+#ifndef GPIO_PIN_0
 #define GPIO_PIN_0  (1 << 0)
 #define GPIO_PIN_1  (1 << 1)
 #define GPIO_PIN_2  (1 << 2)
@@ -35,6 +37,7 @@ typedef struct { volatile uint32_t ACR; } FLASH_Type;
 #define GPIO_PIN_13 (1 << 13)
 #define GPIO_PIN_14 (1 << 14)
 #define GPIO_PIN_15 (1 << 15)
+#endif
 
 /* ── GPIO mode macros ───────────────────────────────────────── */
 #define GPIO_MODE_OUT_PP    0x33
@@ -50,6 +53,8 @@ typedef struct { volatile uint32_t ACR; } FLASH_Type;
 #define USART_CR1_RE        (1 << 2)
 
 /* ── RCC register macros ────────────────────────────────────── */
+#define RCC_CSR_LSION       (1 << 0)
+#define RCC_CSR_LSIRDY      (1 << 1)
 #define RCC_APB2ENR_IOPAEN  (1 << 2)
 #define RCC_APB2ENR_IOPBEN  (1 << 3)
 #define RCC_APB2ENR_IOPCEN  (1 << 4)
@@ -84,12 +89,29 @@ typedef struct { volatile uint32_t ACR; } FLASH_Type;
 #define FLASH_ACR_PRFTBE    (1 << 4)
 #define FLASH_ACR_LATENCY_2 (2 << 0)
 
+/* ── IWDG macros ────────────────────────────────────────────── */
+#define IWDG_SR_PVU         (1 << 0)
+#define IWDG_SR_RVU         (1 << 1)
+
 /* ── TIM macros ──────────────────────────────────────────────── */
 #define TIM_CR1_CEN         (1 << 0)
 #define TIM_CR1_ARPE        (1 << 7)
 #define TIM_SR_UIF          (1 << 0)
 
+/* ── SPI macros ──────────────────────────────────────────────── */
+#define SPI_CR1_CPHA        (1 << 0)
+#define SPI_CR1_CPOL        (1 << 1)
+#define SPI_CR1_MSTR        (1 << 2)
+#define SPI_CR1_BR_Pos      (3U)
+#define SPI_CR1_SPE         (1 << 6)
+#define SPI_CR1_SSI         (1 << 8)
+#define SPI_CR1_SSM         (1 << 9)
+#define SPI_SR_TXE          (1 << 1)
+#define SPI_SR_RXNE         (1 << 0)
+
 /* ── STM32F103 peripheral base addresses (used in tests) ──────── */
+#define IWDG_BASE 0x40003000UL
+#define IWDG   ((IWDG_Type *)IWDG_BASE)
 #define GPIOA ((GPIO_Type *)0x40010800)
 #define GPIOB ((GPIO_Type *)0x40010C00)
 #define GPIOC ((GPIO_Type *)0x40011000)
@@ -104,6 +126,7 @@ typedef USART_Type USART_TypeDef;
 typedef I2C_Type   I2C_TypeDef;
 typedef SPI_Type   SPI_TypeDef;
 typedef ADC_Type   ADC_TypeDef;
+typedef IWDG_Type  IWDG_TypeDef;
 typedef TIM_Type   TIM_TypeDef;
 typedef FLASH_Type FLASH_TypeDef;
 typedef RCC_Type   RCC_TypeDef;

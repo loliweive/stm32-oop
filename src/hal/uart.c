@@ -1,14 +1,14 @@
 /**
  * @file    uart.c
- * @brief   UART — DI pattern + HAL API for TX/RX, manual register init
+ * @brief   UART — DI pattern + register (HOST_TEST/BAREMETAL) / HAL (FreeRTOS)
  */
 #include "uart.h"
-#ifdef HOST_TEST
+#if defined(HOST_TEST) || defined(BAREMETAL)
 #include "stm32f103xb.h"
 #else
 #include "stm32f1xx_hal.h"
-#include "rcc.h"
 #endif
+#include "rcc.h"
 
 void UartPort_ctor(UartPort *self, void *usart, uint32_t baud)
 {
@@ -40,7 +40,7 @@ void uart_send(UartPort *self, uint8_t byte)
 {
     if (self->io) { self->io->write(byte); return; }
     USART_TypeDef *u = (USART_TypeDef *)self->usart;
-#ifndef HOST_TEST
+#if !defined(HOST_TEST) && !defined(BAREMETAL)
     UART_HandleTypeDef h = {0}; h.Instance = u; h.gState = h.RxState = HAL_UART_STATE_READY;
     if (HAL_UART_Transmit(&h, &byte, 1, 10) == HAL_OK) return;
 #endif
@@ -61,7 +61,7 @@ uint8_t uart_recv(UartPort *self, uint8_t *out)
         return 0;
     }
     USART_TypeDef *u = (USART_TypeDef *)self->usart;
-#ifndef HOST_TEST
+#if !defined(HOST_TEST) && !defined(BAREMETAL)
     UART_HandleTypeDef h = {0}; h.Instance = u; h.gState = h.RxState = HAL_UART_STATE_READY;
     if (HAL_UART_Receive(&h, out, 1, 0) == HAL_OK) return 1;
 #endif

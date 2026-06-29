@@ -1,7 +1,7 @@
 # CLAUDE.md — STM32-oop 项目状态 & 接力文件
 
-> **最后更新**: 2026-06-28
-> **当前会话工作**: 移植江协科技 OLED 驱动 → OOP vtable 模式, 20 个 host 单元测试
+> **最后更新**: 2026-06-29
+> **当前会话工作**: IWDG OOP vtable 重写, 10 个测试套件 (含新增 test_iwdg 9 用例)
 > **下一次会话**: 阅读此文件即可接续, 无需重复询问上下文。
 
 ---
@@ -161,6 +161,9 @@ cd build/test && ctest --output-on-failure
 | 7 | test_timer | 5 用例 |
 | 8 | test_ota_protocol | 12 用例 — CRC16 + 帧编解码 |
 | 9 | test_ssd1306 | 20 用例 — vtable/帧缓冲/绘图/文本 |
+| 10 | test_crc32 | 4 用例 — CRC32 正确性 |
+| 11 | test_cli | 12 用例 — 行编辑/历史/补全 |
+| 12 | test_iwdg | 9 用例 — vtable/mock/超时计算 |
 
 ---
 
@@ -220,7 +223,7 @@ bare-metal ──●───●───●───●  (裸机并行线，独
 ### ✅ 已完成
 - [x] 完整的 HAL 层 (GPIO/UART/I2C/SPI/Timer/ADC/RCC/NVIC) — 全部 OOP vtable
 - [x] 核心运行时 (RingBuffer, List, StateMachine, Object, Assert, Log, Delay)
-- [x] TDD 单元测试 (9 套件, 80+ 断言, 100% pass)
+- [x] TDD 单元测试 (12 套件, 100+ 断言, 100% pass)
 - [x] FreeRTOS 集成 (V11, ARM_CM3 port, heap_4, 6KB heap)
 - [x] OneWire 总线驱动 (DS18B20)
 - [x] DHT11 温湿度驱动
@@ -238,6 +241,10 @@ bare-metal ──●───●───●───●  (裸机并行线，独
 - [x] 代码审查 + 安全修复 (CRITICAL 5 + HIGH 6)
 - [x] 完整文档 + 6 个流程图
 - [x] CLAUDE.md 接力文件 (本文件)
+- [x] **IWDG OOP vtable 重写** — 扁平 C → OOP vtable 模式 (4 methods: init/feed/get_timeout_ms/is_enabled)
+  - 纯寄存器级实现, 无 HAL 依赖
+  - 9 个 host 单元测试 (mock vtable 注入)
+  - 修复: PVU/RVU 状态轮询替代盲 NOP 等待
 
 ### 🔜 待实现
 - [ ] 将裸机版也接入 CLI + Sensor OOP
@@ -310,6 +317,7 @@ openocd -f interface/stlink.cfg -f target/stm32f1x.cfg \
 | `src/app/ds18b20_freertos/main.c` | 主固件入口, 传感器切换宏, 命令表 | 🔴 高 |
 | `CMakeLists.txt` | 构建配置, 四模式, 源文件列表 | 🔴 高 |
 | `lib/stm32f1/stm32f103xb.h` | 寄存器定义 (添加外设时更新) | 🟡 中 |
+| `src/hal/iwdg.h` | IWDG OOP vtable 接口 (4 methods) | 🟢 低 |
 | `src/hal/*.h` | HAL 接口 (vtable 定义) | 🟢 低 |
 | `src/display/oled.h` | OLED 抽象接口 (vtable) | 🟢 低 |
 | `src/display/ssd1306.h` | SSD1306 具体驱动头 | 🟢 低 |
@@ -320,7 +328,8 @@ openocd -f interface/stlink.cfg -f target/stm32f1x.cfg \
 | `src/sensor/sensor.h` | Sensor OOP 接口 | 🟢 低 |
 | `src/cli/cli.h` | CLI 引擎接口 | 🟢 低 |
 | `src/ota/ota_config.h` | OTA Flash 分区 & 协议参数 | 🟢 低 |
-| `test/test_*.c` | 单元测试 (9 套件, 80+ 断言) | 🟡 中 |
+| `test/test_iwdg.c` | IWDG 单元测试 (9 用例) | 🟡 中 |
+| `test/test_*.c` | 单元测试 (10 套件, 90+ 断言) | 🟡 中 |
 | `docs/*.md` | 文档 & 流程图 | 🟡 中 |
 | `CLAUDE.md` | 本文件 — 每次大改动后更新 | 🔴 高 |
 
@@ -338,6 +347,16 @@ openocd -f interface/stlink.cfg -f target/stm32f1x.cfg \
 ---
 
 ## 12. 工作日志
+
+### 2026-06-29 (main, IWDG OOP 重写)
+1. **IWDG 驱动 OOP vtable 重写**: 扁平 C → OOP vtable 模式
+   - `src/hal/iwdg.h`: Vtable (4 methods: init/feed/get_timeout_ms/is_enabled) + Context struct + inline 分发
+   - `src/hal/iwdg.c`: 纯寄存器级实现, 移除本地 IWDG_TypeDef 重定义, PVU/RVU 状态轮询
+   - `test/mocks/mock_iwdg.h/.c`: Mock vtable + MockIwdgState (与 GPIO/Timer 模式一致)
+   - `test/test_iwdg.c`: 9 测试用例 (init/幂等/feed/is_enabled/超时计算/构造函数)
+2. **Host 头更新**: `stm32f103xb_host.h` 添加 IWDG_Type/RCC_CSR/IWDG_SR 宏/IWDG_BASE
+3. **调用方更新**: `bare_cli/main.c` + `ds18b20_freertos/main.c` — 新 API (Iwdg_ctor + iwdg_init/feed)
+4. **测试**: 12/12 全过 (含新增 test_iwdg), FreeRTOS 交叉编译通过
 
 ### 2026-06-29 (debug 分支)
 1. **构建健康修复**:

@@ -78,6 +78,7 @@ static GpioPin       btn;            /* PB14 上拉按键 */
 static CLI           cli;
 static SSD1306       oled;
 static SpiFlash      spiflash;
+static Iwdg           wdog;
 static volatile bool stream_mode = false;
 
 /* ── UART 写回调 (给 CLI) ──────────────────────────────────────── */
@@ -91,11 +92,11 @@ static void uart_cli_write(const char *str, size_t len)
  * ═══════════════════════════════════════════════════════════════ */
 
 /* ── FreeRTOS idle hook: 喂狗 (可能不触发, 兜底用) ── */
-void vApplicationIdleHook(void) { iwdg_feed(); }
+void vApplicationIdleHook(void) { iwdg_feed(&wdog); }
 
 /* ── 软件定时器喂狗回调 (100% 可靠, FreeRTOS 内核调度) ── */
 static osTimerId_t iwdg_timer;
-static void _iwdg_timer_cb(void *t) { (void)t; iwdg_feed(); }
+static void _iwdg_timer_cb(void *t) { (void)t; iwdg_feed(&wdog); }
 
 static void cmd_help(CLI *c, int argc, char **argv)
 {
@@ -534,7 +535,7 @@ static void task_cli(void *params)
             __asm__("nop");
         }
         osDelay(5);
-        iwdg_feed();
+        iwdg_feed(&wdog);
 
         /* temp-stream: 从队列读并输出 (CLI context, 无重入风险) */
         if (stream_mode) {
@@ -655,7 +656,8 @@ int main(void)
     DLOG("CP6: tasks ok");
 
     /* IWDG: 必须在调度器启动前最后一刻初始化, 否则提前超时复位 */
-    iwdg_init(6, 0xFFF);  /* PR=6 /256, RLR=4095: ~10-26s timeout */
+    Iwdg_ctor(&wdog, IWDG);
+    iwdg_init(&wdog, 6, 0xFFF);  /* PR=6 /256, RLR=4095: ~10-26s timeout */
     /* 软件定时器每 1s 喂狗 (优先级3, 高于所有任务) */
     iwdg_timer = osTimerNew(_iwdg_timer_cb, osTimerPeriodic, NULL, NULL);
     osTimerStart(iwdg_timer, 1000);  /* 1s period */

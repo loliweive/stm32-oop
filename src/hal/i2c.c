@@ -1,6 +1,6 @@
 /**
  * @file    i2c.c
- * @brief   I2C master — HAL API internally
+ * @brief   I2C master — HAL API, 带总线恢复
  */
 #include "i2c.h"
 
@@ -24,18 +24,35 @@ void i2c_init(I2cPort *self)
     self->_init = true;
 }
 
+static void _i2c_bus_recover(I2cPort *self)
+{
+    /* SWRST: 软件复位 I2C 外设, 释放 SCL/SDA (从机可能拉低 SDA 导致卡死) */
+    self->hi2c.Instance->CR1 |= I2C_CR1_SWRST;
+    self->hi2c.Instance->CR1 &= ~I2C_CR1_SWRST;
+}
+
 bool i2c_write(I2cPort *self, uint8_t addr, const uint8_t *data, size_t len)
 {
     if (addr > 0x7F || !data || len == 0) return false;
-    return HAL_I2C_Master_Transmit(&self->hi2c, (uint16_t)(addr << 1),
-                                   (uint8_t *)data, (uint16_t)len, 100) == HAL_OK;
+    HAL_StatusTypeDef s = HAL_I2C_Master_Transmit(
+        &self->hi2c, (uint16_t)(addr << 1), (uint8_t *)data, (uint16_t)len, 100);
+    if (s != HAL_OK) {
+        _i2c_bus_recover(self);
+        return false;
+    }
+    return true;
 }
 
 bool i2c_read(I2cPort *self, uint8_t addr, uint8_t *data, size_t len)
 {
     if (addr > 0x7F || !data || len == 0) return false;
-    return HAL_I2C_Master_Receive(&self->hi2c, (uint16_t)(addr << 1),
-                                  data, (uint16_t)len, 100) == HAL_OK;
+    HAL_StatusTypeDef s = HAL_I2C_Master_Receive(
+        &self->hi2c, (uint16_t)(addr << 1), data, (uint16_t)len, 100);
+    if (s != HAL_OK) {
+        _i2c_bus_recover(self);
+        return false;
+    }
+    return true;
 }
 
 bool i2c_write_reg(I2cPort *self, uint8_t addr, uint8_t reg, uint8_t val)

@@ -17,16 +17,24 @@ void adc_init(AdcPort *self)
 
     /* ADC 预分频: PCLK2/6 = 12MHz @72MHz (max 14MHz) */
     RCC->CFGR = (RCC->CFGR & ~(3<<14)) | (2<<14);  /* ADCPRE=10 → /6 */
-    for (volatile int i = 0; i < 100; i++) __asm__("nop");
+    { uint32_t _to = 10000; while (--_to) {} }
 
     /* ADON: 上电 ADC */
     a->CR2 |= ADC_CR2_ADON;
-    /* tSTAB: 上电稳定时间 (~10µs) */
-    for (volatile int i = 0; i < 1000; i++) {}
+    /* tSTAB: 上电稳定时间 (~10µs), 超时保护 */
+    { uint32_t _to = 10000; while (--_to) {} }
 
-    /* CAL: 校准 ADC */
+    /* CAL: 校准 ADC (带超时保护 + 恢复) */
     a->CR2 |= ADC_CR2_CAL;
-    while (a->CR2 & ADC_CR2_CAL) {}  /* 等待校准完成 */
+    { uint32_t _to = 100000;
+      while ((a->CR2 & ADC_CR2_CAL) && --_to) {}
+      if (!_to) {
+          /* 校准超时 — 复位校准电路, 标记失败 */
+          a->CR2 |= ADC_CR2_RSTCAL;
+          self->_init = 0;
+          return;
+      }
+    }
     self->_init = 1;
 }
 
@@ -53,6 +61,13 @@ uint16_t adc_read(AdcPort *self, uint8_t channel)
 
     /* ADON: 启动转换 (第二次写 ADON 在已上电时启动转换) */
     a->CR2 |= ADC_CR2_ADON;
-    while (!(a->SR & ADC_SR_EOC)) {}  /* 等待转换完成 */
+    { uint32_t _to = 100000;
+      while (!(a->SR & ADC_SR_EOC) && --_to) {}
+      if (!_to) {
+          /* 转换超时 — 停止转换, 返回错误标记 */
+          a->CR2 &= ~ADC_CR2_ADON;  /* 停止 ADC (ADON=0) */
+          return 0xFFFF;
+      }
+    }
     return (uint16_t)(a->DR & 0xFFFF);
 }

@@ -45,6 +45,36 @@
 
 #include <stdint.h>
 
+/* ── GPIO 引脚位掩码 + 模式宏 ──────────────────────────────── */
+/* 仅在非 HAL 模式下定义 (HAL 的 stm32f1_compat.h 会提供等价宏)。 */
+#if defined(HOST_TEST) || defined(BAREMETAL)
+
+#define GPIO_PIN_0  (1U << 0)
+#define GPIO_PIN_1  (1U << 1)
+#define GPIO_PIN_2  (1U << 2)
+#define GPIO_PIN_3  (1U << 3)
+#define GPIO_PIN_4  (1U << 4)
+#define GPIO_PIN_5  (1U << 5)
+#define GPIO_PIN_6  (1U << 6)
+#define GPIO_PIN_7  (1U << 7)
+#define GPIO_PIN_8  (1U << 8)
+#define GPIO_PIN_9  (1U << 9)
+#define GPIO_PIN_10 (1U << 10)
+#define GPIO_PIN_11 (1U << 11)
+#define GPIO_PIN_12 (1U << 12)
+#define GPIO_PIN_13 (1U << 13)
+#define GPIO_PIN_14 (1U << 14)
+#define GPIO_PIN_15 (1U << 15)
+
+/* ── GPIO 引脚模式宏 (STM32F1 CNF+MODE 编码) ─────────────── */
+#define GPIO_MODE_IN        0x00  /* 输入 (浮空) */
+#define GPIO_MODE_OUT_50MHZ 0x03  /* 输出 50MHz */
+#define GPIO_MODE_OUT_PP    0x03  /* 推挽输出, 50MHz */
+#define GPIO_MODE_OUT_OD    0x07  /* 开漏输出, 50MHz */
+#define GPIO_MODE_IN_PU     0x08  /* 输入, 上拉/下拉 (ODR=1 选上拉) */
+
+#endif /* HOST_TEST || BAREMETAL */
+
 #ifdef __cplusplus
 extern "C" {
 #endif

@@ -1,9 +1,9 @@
 /**
  * @file    gpio.c
- * @brief   GPIO vtable — HAL API (target) / register (host test)
+ * @brief   GPIO vtable — register (HOST_TEST/BAREMETAL) / HAL (FreeRTOS)
  */
 #include "gpio.h"
-#ifdef HOST_TEST
+#if defined(HOST_TEST) || defined(BAREMETAL)
 #include "stm32f103xb.h"
 #define GPIO_MODE_OUT_PP 0x03
 #define GPIO_MODE_OUT_OD 0x07
@@ -15,7 +15,7 @@
 static void _gpio_init(GpioPin *self) { self->_init = 1; gpio_set_mode(self, GPIO_MODE_OUT_PP); }
 
 static void _gpio_set(GpioPin *self, uint8_t level) {
-#ifdef HOST_TEST
+#if defined(HOST_TEST) || defined(BAREMETAL)
     GPIO_TypeDef *r = (GPIO_TypeDef *)self->port;
     if (level) r->BSRR = self->pin; else r->BRR = self->pin;
 #else
@@ -24,7 +24,7 @@ static void _gpio_set(GpioPin *self, uint8_t level) {
 }
 
 static uint8_t _gpio_get(GpioPin *self) {
-#ifdef HOST_TEST
+#if defined(HOST_TEST) || defined(BAREMETAL)
     return (((GPIO_TypeDef *)self->port)->IDR & self->pin) ? 1 : 0;
 #else
     return HAL_GPIO_ReadPin((GPIO_TypeDef *)self->port, self->pin) == GPIO_PIN_SET ? 1 : 0;
@@ -32,7 +32,7 @@ static uint8_t _gpio_get(GpioPin *self) {
 }
 
 static void _gpio_toggle(GpioPin *self) {
-#ifdef HOST_TEST
+#if defined(HOST_TEST) || defined(BAREMETAL)
     uint8_t c = _gpio_get(self); _gpio_set(self, !c);
 #else
     HAL_GPIO_TogglePin((GPIO_TypeDef *)self->port, self->pin);

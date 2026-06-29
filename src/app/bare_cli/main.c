@@ -189,7 +189,9 @@ int main(void) {
     delay_ms(1000);
 
     /* IWDG */
-    iwdg_init(6, 0xFFF);
+    static Iwdg wdog;
+    Iwdg_ctor(&wdog, IWDG);
+    iwdg_init(&wdog, 6, 0xFFF);
 
     /* CLI */
     cli_init(&cli, cmds, _uart_write, NULL);
@@ -236,6 +238,6 @@ int main(void) {
             oled_flush(d);
         }
 
-        iwdg_feed();
+        iwdg_feed(&wdog);
     }
 }

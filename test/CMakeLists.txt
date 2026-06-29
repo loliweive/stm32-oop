@@ -33,6 +33,7 @@ set(TEST_INCLUDES
     ${ROOT_DIR}/src/cli
     ${ROOT_DIR}/src/ota
     ${ROOT_DIR}/src/display
+    ${ROOT_DIR}/src/storage
     ${ROOT_DIR}/lib/stm32f1
     ${ROOT_DIR}/lib/cmsis
 )
@@ -147,6 +148,35 @@ set(CRC32_SRC
 add_host_test(test_crc32
     ${CRC32_SRC}
     ${TEST_DIR}/test_crc32.c
+)
+
+# IWDG mock + test (OOP vtable pattern)
+set(IWDG_SRC
+    ${ROOT_DIR}/src/hal/iwdg.c
+)
+set(MOCK_IWDG_SRC
+    ${TEST_DIR}/mocks/mock_iwdg.c
+)
+
+add_host_test(test_iwdg
+    ${IWDG_SRC}
+    ${MOCK_IWDG_SRC}
+    ${TEST_DIR}/test_iwdg.c
+)
+
+# SPI Flash test (mock_spi.c replaces spi.c + gpio.c constructors)
+set(SPI_FLASH_SRC
+    ${ROOT_DIR}/src/storage/spi_flash.c
+)
+set(MOCK_SPI_SRC
+    ${TEST_DIR}/mocks/mock_spi.c
+)
+
+add_host_test(test_spi_flash
+    ${SPI_FLASH_SRC}
+    ${MOCK_SPI_SRC}
+    ${MOCK_SRC}
+    ${TEST_DIR}/test_spi_flash.c
 )
 
 # CLI test (pure logic, mock write_fn)

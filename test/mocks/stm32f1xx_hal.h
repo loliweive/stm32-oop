@@ -13,11 +13,22 @@
 typedef enum { HAL_OK = 0, HAL_ERROR = 1, HAL_BUSY = 2, HAL_TIMEOUT = 3 } HAL_StatusTypeDef;
 typedef enum { GPIO_PIN_RESET = 0, GPIO_PIN_SET = 1 } GPIO_PinState;
 
+#ifndef GPIO_MODE_OUT_PP
 #define GPIO_MODE_OUT_PP       0x03
+#endif
+#ifndef GPIO_MODE_OUT_OD
 #define GPIO_MODE_OUT_OD      0x07
+#endif
+#ifndef GPIO_MODE_IN_FL
 #define GPIO_MODE_IN_FL       0x04
+#endif
+#ifndef GPIO_MODE_IN_PU
 #define GPIO_MODE_IN_PU       0x08
+#endif
+#ifndef GPIO_MODE_OUTPUT_PP
 #define GPIO_MODE_OUTPUT_PP   GPIO_MODE_OUT_PP
+#endif
+#ifndef GPIO_PIN_0
 #define GPIO_PIN_0   ((uint16_t)0x0001)
 #define GPIO_PIN_1   ((uint16_t)0x0002)
 #define GPIO_PIN_2   ((uint16_t)0x0004)
@@ -34,6 +45,7 @@ typedef enum { GPIO_PIN_RESET = 0, GPIO_PIN_SET = 1 } GPIO_PinState;
 #define GPIO_PIN_13  ((uint16_t)0x2000)
 #define GPIO_PIN_14  ((uint16_t)0x4000)
 #define GPIO_PIN_15  ((uint16_t)0x8000)
+#endif
 
 /* Stub HAL functions — never called in host tests (DI path) */
 static inline void HAL_GPIO_WritePin(void *p, uint16_t n, GPIO_PinState s) { (void)p;(void)n;(void)s; }

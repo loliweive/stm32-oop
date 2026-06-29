@@ -5,7 +5,11 @@
 #include "spi_flash.h"
 #include "gpio.h"
 #include "spi.h"
+#if defined(BAREMETAL)
+#include "stm32f103xb.h"
+#else
 #include "stm32f1xx_hal.h"
+#endif
 #include <string.h>
 #include <stdio.h>
 

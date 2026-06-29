@@ -1,5 +1,5 @@
 #include "rcc.h"
-#include "stm32f1xx_hal.h"
+#include "stm32f103xb.h"
 
 void rcc_set_sysclk(RccClockSource src, uint8_t pll_mul)
 {

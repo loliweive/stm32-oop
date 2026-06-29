@@ -62,3 +62,13 @@ void mock_gpio_inject(GpioPin *pin, MockGpioState *state)
     active_state = state;
     state->pin   = pin->pin;
 }
+
+const GpioVtable *mock_gpio_get_vtable(void)
+{
+    return &_mock_vtable;
+}
+
+void mock_gpio_set_global(MockGpioState *s)
+{
+    active_state = s;
+}

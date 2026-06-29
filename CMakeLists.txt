@@ -32,9 +32,11 @@ elseif(BUILD_MODE STREQUAL "stm32f103")
     set(LINKER_SCRIPT "${CMAKE_SOURCE_DIR}/linker/stm32f103c8.ld")
 
     set(STM32_SRC_DIR "${CMAKE_SOURCE_DIR}/src")
+    set(STM32HAL_DIR "${CMAKE_SOURCE_DIR}/lib/stm32f1_hal")
     set(STM32_INCLUDES
         "${CMAKE_SOURCE_DIR}/lib/cmsis"
         "${CMAKE_SOURCE_DIR}/lib/stm32f1"
+        "${STM32HAL_DIR}/Inc"
         "${STM32_SRC_DIR}/core"
         "${STM32_SRC_DIR}/hal"
         "${STM32_SRC_DIR}/utils"
@@ -71,6 +73,15 @@ elseif(BUILD_MODE STREQUAL "stm32f103")
         ${STM32_SRC_DIR}/storage/spi_flash.c
         ${STM32_SRC_DIR}/cli/cli.c
         ${STM32_SRC_DIR}/app/bare_cli/main.c
+        # STM32 HAL (needed by gpio/rcc/uart/spi/i2c/adc wrappers)
+        ${STM32HAL_DIR}/Src/stm32f1xx_hal.c
+        ${STM32HAL_DIR}/Src/stm32f1xx_hal_rcc.c
+        ${STM32HAL_DIR}/Src/stm32f1xx_hal_gpio.c
+        ${STM32HAL_DIR}/Src/stm32f1xx_hal_cortex.c
+        ${STM32HAL_DIR}/Src/stm32f1xx_hal_uart.c
+        ${STM32HAL_DIR}/Src/stm32f1xx_hal_spi.c
+        ${STM32HAL_DIR}/Src/stm32f1xx_hal_i2c.c
+        ${STM32HAL_DIR}/Src/stm32f1xx_hal_adc.c
     )
 
     target_include_directories(${PROJECT_NAME} PRIVATE ${STM32_INCLUDES})
@@ -89,9 +100,7 @@ elseif(BUILD_MODE STREQUAL "stm32f103")
 
     target_link_libraries(${PROJECT_NAME} PRIVATE m)
 
-    target_compile_definitions(${PROJECT_NAME} PRIVATE
-        STM32F103xB
-    )
+    target_compile_definitions(${PROJECT_NAME} PRIVATE STM32F103xB)
 
     # Post-build: generate .bin / .hex / size report
     add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
@@ -281,7 +290,7 @@ elseif(BUILD_MODE STREQUAL "bootloader")
         -T "${LINKER_SCRIPT}"
     )
 
-    target_compile_definitions(${PROJECT_NAME} PRIVATE STM32F103xB)
+    target_compile_definitions(${PROJECT_NAME} PRIVATE STM32F103xB BAREMETAL)
 
     add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
         COMMAND arm-none-eabi-objcopy -O binary $<TARGET_FILE:${PROJECT_NAME}> ${PROJECT_NAME}.bin
@@ -371,7 +380,7 @@ elseif(BUILD_MODE STREQUAL "peripheral")
 
     target_link_libraries(${PROJECT_NAME} PRIVATE m)
 
-    target_compile_definitions(${PROJECT_NAME} PRIVATE STM32F103xB)
+    target_compile_definitions(${PROJECT_NAME} PRIVATE STM32F103xB BAREMETAL)
 
     add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
         COMMAND arm-none-eabi-objcopy -O binary $<TARGET_FILE:${PROJECT_NAME}>

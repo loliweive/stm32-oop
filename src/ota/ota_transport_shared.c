@@ -3,6 +3,7 @@
  * @brief   共享 UART 传输实现 — 复用已有 UartPort
  */
 #include "ota_transport_shared.h"
+#include "dwt_delay.h"
 #include <string.h>
 
 static void _init(OtaTransport *self)          { (void)self; /* UART 已初始化 */ }
@@ -28,7 +29,7 @@ static size_t _recv(OtaTransport *self, uint8_t *buf, size_t max_len, uint32_t t
             buf[n++] = byte;
             elapsed = 0;
         } else {
-            for (volatile int i = 0; i < 6000; i++) __asm__("nop");
+            DWT_DELAY_MS(1);
             elapsed++;
         }
     }

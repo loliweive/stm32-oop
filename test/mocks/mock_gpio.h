@@ -32,6 +32,12 @@ void mock_gpio_reset(MockGpioState *s);
 /** Inject a mock vtable into a GpioPin (replaces the real one). */
 void mock_gpio_inject(GpioPin *pin, MockGpioState *state);
 
+/** Get the mock vtable pointer (for use by mock constructors). */
+const GpioVtable *mock_gpio_get_vtable(void);
+
+/** Set global mock state (before spi_flash_init in link-time mock setup). */
+void mock_gpio_set_global(MockGpioState *s);
+
 #ifdef __cplusplus
 }
 #endif

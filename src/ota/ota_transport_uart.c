@@ -9,7 +9,12 @@
  */
 #include "ota_transport_uart.h"
 #include "rcc.h"
+#if defined(BAREMETAL)
+#include "stm32f103xb.h"
+#else
 #include "stm32f1xx_hal.h"
+#endif
+#include "dwt_delay.h"
 #include <string.h>
 
 /* ── vtable 实现 ──────────────────────────────────────────────── */
@@ -55,8 +60,8 @@ static size_t _uart_recv(OtaTransport *self, uint8_t *buf, size_t max_len, uint3
             buf[received++] = byte;
             elapsed = 0; /* 收到数据, 重置超时 */
         } else {
-            /* 简易延时 ~1ms (忙等待) */
-            for (volatile int i = 0; i < 72000; i++) {}
+            /* 简易延时 ~1ms */
+            DWT_DELAY_MS(1);
             elapsed++;
         }
     }
