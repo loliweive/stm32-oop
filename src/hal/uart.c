@@ -31,7 +31,7 @@
  */
 
 #include "uart.h"
-#include "stm32f103xb.h"
+#include "stm32f1xx_hal.h"
 #include "rcc.h"
 
 /**
@@ -68,7 +68,7 @@ void uart_init(UartPort *self)
         return;
     }
 
-    USART_Type *u = (USART_Type *)self->usart;
+    USART_TypeDef *u = (USART_TypeDef *)self->usart;
 
     /* 守卫: baudrate=0 会导致除零异常 */
     if (self->baudrate == 0) return;
@@ -103,7 +103,7 @@ void uart_send(UartPort *self, uint8_t byte)
     }
 
     /* 真实硬件路径 */
-    USART_Type *u = (USART_Type *)self->usart;
+    USART_TypeDef *u = (USART_TypeDef *)self->usart;
 
     /* 等待发送数据寄存器为空 (TXE) */
     while (!(u->SR & USART_SR_TXE)) {
@@ -147,7 +147,7 @@ uint8_t uart_recv(UartPort *self, uint8_t *out)
     }
 
     /* 真实硬件路径 */
-    USART_Type *u = (USART_Type *)self->usart;
+    USART_TypeDef *u = (USART_TypeDef *)self->usart;
     if (u->SR & USART_SR_RXNE) {
         *out = (uint8_t)(u->DR & 0xFF);
         return 1;
@@ -169,6 +169,6 @@ size_t uart_available(UartPort *self)
         return self->io->available();
     }
 
-    USART_Type *u = (USART_Type *)self->usart;
+    USART_TypeDef *u = (USART_TypeDef *)self->usart;
     return (u->SR & USART_SR_RXNE) ? 1 : 0;
 }

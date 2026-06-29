@@ -28,7 +28,7 @@
  */
 
 #include "gpio.h"
-#include "stm32f103xb.h"
+#include "stm32f1xx_hal.h"
 
 /* ═══════════════════════════════════════════════════════════════
  *  默认 vtable — 真实硬件操作
@@ -61,7 +61,7 @@ static void _gpio_init(GpioPin *self)
  */
 static void _gpio_set(GpioPin *self, uint8_t level)
 {
-    GPIO_Type *reg = (GPIO_Type *)self->port;  /* 转换为寄存器结构体 */
+    GPIO_TypeDef *reg = (GPIO_TypeDef *)self->port;  /* 转换为寄存器结构体 */
     if (level) {
         reg->BSRR = self->pin;   /* 置位：BSRR 低 16 位写 1 对应 pin 置高 */
     } else {
@@ -77,7 +77,7 @@ static void _gpio_set(GpioPin *self, uint8_t level)
  */
 static uint8_t _gpio_get(GpioPin *self)
 {
-    GPIO_Type *reg = (GPIO_Type *)self->port;
+    GPIO_TypeDef *reg = (GPIO_TypeDef *)self->port;
     return (reg->IDR & self->pin) ? 1 : 0;
 }
 
@@ -107,7 +107,7 @@ static void _gpio_set_mode(GpioPin *self, uint8_t mode)
     /* 守卫: pin=0 时后续移位操作会导致未定义行为 */
     if (self->pin == 0) return;
 
-    GPIO_Type *reg = (GPIO_Type *)self->port;
+    GPIO_TypeDef *reg = (GPIO_TypeDef *)self->port;
     uint32_t pos = 0;
 
     /* 找到 pin 的位置 (0..15) */

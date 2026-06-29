@@ -14,7 +14,7 @@
  */
 
 #include "delay.h"
-#include "core_cm3.h"
+#include "stm32f103xb.h" /* core_cm3 + IRQn */
 
 
 /* ═══════════════════════════════════════════════════════════════

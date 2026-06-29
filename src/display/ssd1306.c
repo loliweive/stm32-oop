@@ -22,7 +22,7 @@
 
 /* ── 目标硬件 I2C 寄存器操作 ────────────────────────── */
 #ifdef STM32F103xB
-#include "stm32f103xb.h"
+#include "stm32f1xx_hal.h"
 
 /**
  * @brief 低层 I2C 写 (绕过 I2cPort 封装，直接操作寄存器)
@@ -32,7 +32,7 @@
  * 直接寄存器操作显著减少 CPU 开销。
  */
 /* I2C 总线恢复 — 外设复位 + STOP，解锁被从机拉死的总线 */
-static void _i2c_recover(I2C_Type *i)
+static void _i2c_recover(I2C_TypeDef *i)
 {
     i->CR1 |= I2C_CR1_STOP;       /* 确保 STOP */
     i->CR1 |= I2C_CR1_SWRST;      /* 软件复位 I2C 外设 */
@@ -41,7 +41,7 @@ static void _i2c_recover(I2C_Type *i)
 
 static bool i2c_write_raw(void *i2c, uint8_t addr, const uint8_t *data, size_t len)
 {
-    I2C_Type *i = (I2C_Type *)i2c;
+    I2C_TypeDef *i = (I2C_TypeDef *)i2c;
     uint32_t to;
 
     /* 等待总线空闲 */

@@ -3,13 +3,13 @@
  * @brief   I2C 主机驱动 — 使用 CMSIS 位定义，带超时保护
  */
 #include "i2c.h"
-#include "stm32f103xb.h"
+#include "stm32f1xx_hal.h"
 
 /* I2C 超时计数器 — 约 10ms @ 72MHz */
 #define I2C_TIMEOUT 100000UL
 
 /** @brief 带超时的标志等待，返回 true=就绪，false=超时 */
-static bool i2c_wait_sr1(I2C_Type *i, uint32_t flag)
+static bool i2c_wait_sr1(I2C_TypeDef *i, uint32_t flag)
 {
     uint32_t timeout = I2C_TIMEOUT;
     while (!(i->SR1 & flag) && --timeout) {}
@@ -17,7 +17,7 @@ static bool i2c_wait_sr1(I2C_Type *i, uint32_t flag)
 }
 
 /** @brief 检查错误标志 (AF, BERR, ARLO) */
-static bool i2c_error(I2C_Type *i)
+static bool i2c_error(I2C_TypeDef *i)
 {
     return (i->SR1 & (I2C_SR1_AF | I2C_SR1_BERR | I2C_SR1_ARLO)) != 0;
 }
@@ -32,7 +32,7 @@ void I2cPort_ctor(I2cPort *self, void *i2c, uint32_t speed_hz, uint32_t pclk_hz)
 
 void i2c_init(I2cPort *self)
 {
-    I2C_Type *i = (I2C_Type *)self->i2c;
+    I2C_TypeDef *i = (I2C_TypeDef *)self->i2c;
 
     /* SWRST: 软件复位 I2C 外设 */
     i->CR1 |= I2C_CR1_SWRST;
@@ -55,7 +55,7 @@ void i2c_init(I2cPort *self)
 }
 
 /** @brief 发送 START 条件并等待 SB 标志 */
-static bool i2c_start(I2C_Type *i)
+static bool i2c_start(I2C_TypeDef *i)
 {
     i->CR1 |= I2C_CR1_START;
     if (!i2c_wait_sr1(i, I2C_SR1_SB)) return false;
@@ -63,13 +63,13 @@ static bool i2c_start(I2C_Type *i)
 }
 
 /** @brief 发送 STOP 条件 */
-static void i2c_stop(I2C_Type *i)
+static void i2c_stop(I2C_TypeDef *i)
 {
     i->CR1 |= I2C_CR1_STOP;
 }
 
 /** @brief 发送地址并等待 ADDR 标志 */
-static bool i2c_send_addr(I2C_Type *i, uint8_t addr, uint8_t dir)
+static bool i2c_send_addr(I2C_TypeDef *i, uint8_t addr, uint8_t dir)
 {
     i->DR = (uint8_t)((addr << 1) | dir);
     if (!i2c_wait_sr1(i, I2C_SR1_ADDR)) return false;
@@ -78,7 +78,7 @@ static bool i2c_send_addr(I2C_Type *i, uint8_t addr, uint8_t dir)
 }
 
 /** @brief 发送一个字节 */
-static bool i2c_send_byte(I2C_Type *i, uint8_t byte)
+static bool i2c_send_byte(I2C_TypeDef *i, uint8_t byte)
 {
     if (!i2c_wait_sr1(i, I2C_SR1_TXE)) return false;
     i->DR = byte;
@@ -95,7 +95,7 @@ bool i2c_write(I2cPort *self, uint8_t addr, const uint8_t *data, size_t len)
 {
     if (addr > 0x7F || !data || len == 0) return false;
 
-    I2C_Type *i = (I2C_Type *)self->i2c;
+    I2C_TypeDef *i = (I2C_TypeDef *)self->i2c;
     if (!i2c_start(i)) { i2c_stop(i); return false; }
     if (!i2c_send_addr(i, addr, 0)) { i2c_stop(i); return false; }
     if (i2c_error(i)) { i2c_stop(i); return false; }
@@ -111,7 +111,7 @@ bool i2c_read(I2cPort *self, uint8_t addr, uint8_t *data, size_t len)
 {
     if (addr > 0x7F || !data || len == 0) return false;
 
-    I2C_Type *i = (I2C_Type *)self->i2c;
+    I2C_TypeDef *i = (I2C_TypeDef *)self->i2c;
     if (!i2c_start(i)) { i2c_stop(i); return false; }
     if (!i2c_send_addr(i, addr, 1)) { i2c_stop(i); return false; }
 

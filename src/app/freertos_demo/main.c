@@ -69,10 +69,10 @@ static void task_uart(void *params)
     /* 配置 USART1: PA9=TX, PA10=RX */
     GpioPin tx, rx;
     GpioPin_ctor(&tx, GPIOA, GPIO_PIN_9);
-    gpio_set_mode(&tx, GPIO_CNF_ALT_PP | GPIO_MODE_OUT_50MHZ);
+    gpio_set_mode(&tx, 0x0B | GPIO_MODE_OUT_50MHZ);
 
     GpioPin_ctor(&rx, GPIOA, GPIO_PIN_10);
-    gpio_set_mode(&rx, GPIO_CNF_FLOAT | GPIO_MODE_IN);
+    gpio_set_mode(&rx, 0x04 | GPIO_MODE_IN);
 
     UartPort_ctor(&uart, USART1, 115200);
     uart_init(&uart);

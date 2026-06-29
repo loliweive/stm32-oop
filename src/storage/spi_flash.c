@@ -5,7 +5,7 @@
 #include "spi_flash.h"
 #include "gpio.h"
 #include "spi.h"
-#include "stm32f103xb.h"
+#include "stm32f1xx_hal.h"
 #include <string.h>
 #include <stdio.h>
 

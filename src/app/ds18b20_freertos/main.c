@@ -9,7 +9,7 @@
  *   两个模块共用 PA1, 可插拔替换, 编译时选择。
  */
 
-#include "stm32f103xb.h"
+#include "stm32f1xx_hal.h"
 #include "cmsis_os2_wrapper.h"  /* CMSIS-RTOS V2 → FreeRTOS */
 
 #include "rcc.h"
@@ -498,9 +498,9 @@ static void task_cli(void *params)
     {
         GpioPin tx, rx;
         GpioPin_ctor(&tx, UART_TX_PORT, UART_TX_PIN);
-        gpio_set_mode(&tx, GPIO_CNF_ALT_PP | GPIO_MODE_OUT_50MHZ);
+        gpio_set_mode(&tx, 0x0B | GPIO_MODE_OUT_50MHZ);
         GpioPin_ctor(&rx, UART_RX_PORT, UART_RX_PIN);
-        gpio_set_mode(&rx, GPIO_CNF_FLOAT | GPIO_MODE_IN);
+        gpio_set_mode(&rx, 0x04 | GPIO_MODE_IN);
         UartPort_ctor(&uart, USART1, 115200);
         uart_init(&uart);
     }
@@ -599,9 +599,9 @@ int main(void)
     {
         GpioPin scl, sda;
         GpioPin_ctor(&scl, OLED_SCL_PORT, OLED_SCL_PIN);
-        gpio_set_mode(&scl, GPIO_CNF_ALT_OD | GPIO_MODE_OUT_50MHZ);
+        gpio_set_mode(&scl, 0x0F | GPIO_MODE_OUT_50MHZ);
         GpioPin_ctor(&sda, OLED_SDA_PORT, OLED_SDA_PIN);
-        gpio_set_mode(&sda, GPIO_CNF_ALT_OD | GPIO_MODE_OUT_50MHZ);
+        gpio_set_mode(&sda, 0x0F | GPIO_MODE_OUT_50MHZ);
 
         I2cPort i2c_port;
         I2cPort_ctor(&i2c_port, OLED_I2C, 400000, 36000000);  /* 400kHz @ 8MHz HSI */
@@ -625,11 +625,11 @@ int main(void)
     {
         GpioPin sck, miso, mosi;
         GpioPin_ctor(&sck,  GPIOA, GPIO_PIN_5);
-        gpio_set_mode(&sck,  GPIO_CNF_ALT_PP | GPIO_MODE_OUT_50MHZ);
+        gpio_set_mode(&sck,  0x0B | GPIO_MODE_OUT_50MHZ);
         GpioPin_ctor(&miso, GPIOA, GPIO_PIN_6);
-        gpio_set_mode(&miso, GPIO_CNF_FLOAT | GPIO_MODE_IN);
+        gpio_set_mode(&miso, 0x04 | GPIO_MODE_IN);
         GpioPin_ctor(&mosi, GPIOA, GPIO_PIN_7);
-        gpio_set_mode(&mosi, GPIO_CNF_ALT_PP | GPIO_MODE_OUT_50MHZ);
+        gpio_set_mode(&mosi, 0x0B | GPIO_MODE_OUT_50MHZ);
     }
     spi_flash_init(&spiflash, SPI1, GPIOB, GPIO_PIN_9);
     DLOG("CP4: SPI ok");

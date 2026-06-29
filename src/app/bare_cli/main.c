@@ -6,7 +6,7 @@
  * 命令: help btn flash-id info led light oled runtime temp temp-stream
  */
 
-#include "stm32f103xb.h"
+#include "stm32f1xx_hal.h"
 #include "rcc.h"
 #include "gpio.h"
 #include "uart.h"
@@ -164,22 +164,22 @@ int main(void) {
 
     /* UART */
     { GpioPin t,r;
-      GpioPin_ctor(&t,GPIOA,GPIO_PIN_9); gpio_set_mode(&t,GPIO_CNF_ALT_PP|GPIO_MODE_OUT_50MHZ);
+      GpioPin_ctor(&t,GPIOA,GPIO_PIN_9); gpio_set_mode(&t,0x0B|GPIO_MODE_OUT_50MHZ);
       GpioPin_ctor(&r,GPIOA,GPIO_PIN_10); gpio_set_mode(&r,0x8|GPIO_MODE_IN); gpio_set(&r,1); }
     UartPort_ctor(&uart, USART1, 115200); uart_init(&uart);
 
     /* OLED */
     { GpioPin s,d;
-      GpioPin_ctor(&s,GPIOB,GPIO_PIN_6); gpio_set_mode(&s,GPIO_CNF_ALT_OD|GPIO_MODE_OUT_50MHZ);
-      GpioPin_ctor(&d,GPIOB,GPIO_PIN_7); gpio_set_mode(&d,GPIO_CNF_ALT_OD|GPIO_MODE_OUT_50MHZ); }
+      GpioPin_ctor(&s,GPIOB,GPIO_PIN_6); gpio_set_mode(&s,0x0F|GPIO_MODE_OUT_50MHZ);
+      GpioPin_ctor(&d,GPIOB,GPIO_PIN_7); gpio_set_mode(&d,0x0F|GPIO_MODE_OUT_50MHZ); }
     { I2cPort ip; I2cPort_ctor(&ip, I2C1, 400000, 36000000); i2c_init(&ip); }
     ssd1306_ctor(&oled, I2C1, 0x3C); oled_init(&oled.base);
 
     /* SPI Flash */
     { GpioPin sck,miso,mosi,cs;
-      GpioPin_ctor(&sck,GPIOA,GPIO_PIN_5); gpio_set_mode(&sck,GPIO_CNF_ALT_PP|GPIO_MODE_OUT_50MHZ);
-      GpioPin_ctor(&miso,GPIOA,GPIO_PIN_6); gpio_set_mode(&miso,GPIO_CNF_FLOAT|GPIO_MODE_IN);
-      GpioPin_ctor(&mosi,GPIOA,GPIO_PIN_7); gpio_set_mode(&mosi,GPIO_CNF_ALT_PP|GPIO_MODE_OUT_50MHZ);
+      GpioPin_ctor(&sck,GPIOA,GPIO_PIN_5); gpio_set_mode(&sck,0x0B|GPIO_MODE_OUT_50MHZ);
+      GpioPin_ctor(&miso,GPIOA,GPIO_PIN_6); gpio_set_mode(&miso,0x04|GPIO_MODE_IN);
+      GpioPin_ctor(&mosi,GPIOA,GPIO_PIN_7); gpio_set_mode(&mosi,0x0B|GPIO_MODE_OUT_50MHZ);
       GpioPin_ctor(&cs,GPIOB,GPIO_PIN_9); gpio_set_mode(&cs,GPIO_MODE_OUT_PP); gpio_set(&cs,1); }
     spi_flash_init(&spiflash, SPI1, GPIOB, GPIO_PIN_9);
 

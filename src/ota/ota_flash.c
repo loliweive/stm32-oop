@@ -17,16 +17,7 @@
 #include "crc32.h"
 #include <string.h>
 
-#define FLASH_KEY1  0x45670123UL
-#define FLASH_KEY2  0xCDEF89ABUL
-
-/* Flash 控制位 — 最小化 CMSIS 依赖 */
-#define FLASH_CR_PG       (1 << 0)
-#define FLASH_CR_PER      (1 << 1)
-#define FLASH_CR_STRT     (1 << 6)
-#define FLASH_CR_LOCK     (1 << 7)
-#define FLASH_SR_BSY      (1 << 0)
-#define FLASH_SR_PGERR    (1 << 2)
+/* Flash 控制位 — now provided by CMSIS (stm32f103xb.h) */
 
 void ota_flash_init(void)
 {

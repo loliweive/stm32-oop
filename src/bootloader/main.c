@@ -1,7 +1,7 @@
 /**
  * @brief  OTA Bootloader — 最小跳转 + 外部 Flash 恢复 + UART OTA
  */
-#include "stm32f103xb.h"
+#include "stm32f1xx_hal.h"
 #include "ota_config.h"
 #include "ota_flash.h"
 #include "spi_flash.h"
@@ -53,8 +53,8 @@ static void oled_data(const uint8_t *d, int n) {
 }
 static void oled_init_show(const char *line1, const char *line2) {
     rcc_enable_gpio('B'); rcc_enable_i2c(1);
-    { GpioPin s; GpioPin_ctor(&s,GPIOB,GPIO_PIN_6); gpio_set_mode(&s,GPIO_CNF_ALT_OD|GPIO_MODE_OUT_50MHZ);
-      GpioPin_ctor(&s,GPIOB,GPIO_PIN_7); gpio_set_mode(&s,GPIO_CNF_ALT_OD|GPIO_MODE_OUT_50MHZ); }
+    { GpioPin s; GpioPin_ctor(&s,GPIOB,GPIO_PIN_6); gpio_set_mode(&s,0x0F|GPIO_MODE_OUT_50MHZ);
+      GpioPin_ctor(&s,GPIOB,GPIO_PIN_7); gpio_set_mode(&s,0x0F|GPIO_MODE_OUT_50MHZ); }
     I2C1->CR1|=I2C_CR1_SWRST; I2C1->CR1&=~I2C_CR1_SWRST;
     I2C1->CR2=36; I2C1->CCR=180; I2C1->TRISE=37; I2C1->CR1|=I2C_CR1_PE;
     uint8_t c[]={0xAE,0x20,0x02,0xA8,0x3F,0xD3,0x00,0x40,0xA1,0xC8,
@@ -109,9 +109,9 @@ int main(void) {
 
     /* ② 外部 Flash 恢复 */
     rcc_enable_spi(1); rcc_enable_gpio('A'); rcc_enable_gpio('B');
-    { GpioPin s; GpioPin_ctor(&s,GPIOA,GPIO_PIN_5); gpio_set_mode(&s,GPIO_CNF_ALT_PP|GPIO_MODE_OUT_50MHZ);
-      GpioPin_ctor(&s,GPIOA,GPIO_PIN_6); gpio_set_mode(&s,GPIO_CNF_FLOAT|GPIO_MODE_IN);
-      GpioPin_ctor(&s,GPIOA,GPIO_PIN_7); gpio_set_mode(&s,GPIO_CNF_ALT_PP|GPIO_MODE_OUT_50MHZ);
+    { GpioPin s; GpioPin_ctor(&s,GPIOA,GPIO_PIN_5); gpio_set_mode(&s,0x0B|GPIO_MODE_OUT_50MHZ);
+      GpioPin_ctor(&s,GPIOA,GPIO_PIN_6); gpio_set_mode(&s,0x04|GPIO_MODE_IN);
+      GpioPin_ctor(&s,GPIOA,GPIO_PIN_7); gpio_set_mode(&s,0x0B|GPIO_MODE_OUT_50MHZ);
       GpioPin_ctor(&s,GPIOB,GPIO_PIN_9); gpio_set_mode(&s,GPIO_MODE_OUT_PP); gpio_set(&s,1); }
     SpiFlash ext;
     if (spi_flash_init(&ext, SPI1, GPIOB, GPIO_PIN_9)) {

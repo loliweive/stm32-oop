@@ -9,7 +9,7 @@
  */
 #include "ota_transport_uart.h"
 #include "rcc.h"
-#include "stm32f103xb.h"
+#include "stm32f1xx_hal.h"
 #include <string.h>
 
 /* ── vtable 实现 ──────────────────────────────────────────────── */
@@ -23,7 +23,7 @@ static void _uart_init(OtaTransport *self)
 
     /* PA9 = USART1 TX */
     GpioPin_ctor(&ctx->tx, GPIOA, GPIO_PIN_9);
-    gpio_set_mode(&ctx->tx, GPIO_CNF_ALT_PP | GPIO_MODE_OUT_50MHZ);
+    gpio_set_mode(&ctx->tx, 0x0B | GPIO_MODE_OUT_50MHZ);
 
     /* PA10 = USART1 RX */
     GpioPin_ctor(&ctx->rx, GPIOA, GPIO_PIN_10);

@@ -120,6 +120,8 @@ elseif(BUILD_MODE STREQUAL "freertos")
         "${FREERTOS_DIR}/portable/GCC/ARM_CM3"
         "${CMAKE_SOURCE_DIR}/lib/cmsis"
         "${CMAKE_SOURCE_DIR}/lib/cmsis_rtos"
+        "${CMAKE_SOURCE_DIR}/lib/stm32f1_hal/Inc"
+        "${CMAKE_SOURCE_DIR}/lib/stm32f1_hal_compat"
         "${CMAKE_SOURCE_DIR}/lib/stm32f1"
         "${STM32_SRC_DIR}/core"
         "${STM32_SRC_DIR}/hal"
@@ -144,6 +146,21 @@ elseif(BUILD_MODE STREQUAL "freertos")
         ${CMAKE_SOURCE_DIR}/lib/cmsis_rtos/cmsis_os2.c
     )
 
+    # STM32CubeF1 HAL library sources (minimal set for our peripherals)
+    set(STM32HAL_DIR "${CMAKE_SOURCE_DIR}/lib/stm32f1_hal")
+    set(STM32HAL_SRC
+        ${STM32HAL_DIR}/Src/stm32f1xx_hal.c
+        ${STM32HAL_DIR}/Src/stm32f1xx_hal_rcc.c
+        ${STM32HAL_DIR}/Src/stm32f1xx_hal_gpio.c
+        ${STM32HAL_DIR}/Src/stm32f1xx_hal_cortex.c
+        ${STM32HAL_DIR}/Src/stm32f1xx_hal_flash.c
+        ${STM32HAL_DIR}/Src/stm32f1xx_hal_uart.c
+        ${STM32HAL_DIR}/Src/stm32f1xx_hal_i2c.c
+        ${STM32HAL_DIR}/Src/stm32f1xx_hal_spi.c
+        ${STM32HAL_DIR}/Src/stm32f1xx_hal_adc.c
+        ${STM32HAL_DIR}/Src/stm32f1xx_hal_tim.c
+    )
+
     add_executable(${PROJECT_NAME}
         ${STM32_SRC_DIR}/startup/startup_stm32f103c8.s
         ${STM32_SRC_DIR}/startup/system_stm32f1.c
@@ -160,7 +177,6 @@ elseif(BUILD_MODE STREQUAL "freertos")
         ${STM32_SRC_DIR}/hal/i2c.c
         ${STM32_SRC_DIR}/hal/spi.c
         ${STM32_SRC_DIR}/hal/adc.c
-        ${STM32_SRC_DIR}/hal/nvic.c
         ${STM32_SRC_DIR}/hal/timer.c
         ${STM32_SRC_DIR}/sensor/onewire.c
         ${STM32_SRC_DIR}/sensor/ds18b20.c
@@ -181,13 +197,14 @@ elseif(BUILD_MODE STREQUAL "freertos")
         ${STM32_SRC_DIR}/app/ds18b20_freertos/main.c
         ${STM32_SRC_DIR}/app/freertos_demo/freertos_hooks.c
         ${FREERTOS_SRC}
+        ${STM32HAL_SRC}
     )
 
     target_include_directories(${PROJECT_NAME} PRIVATE ${FREERTOS_INCLUDES})
 
     target_compile_options(${PROJECT_NAME} PRIVATE
         -mcpu=cortex-m3 -mthumb -mfloat-abi=soft
-        -O0 -g3 -Wall -Wextra -Werror
+        -Os -g3 -Wall -Wextra -Werror
         -ffunction-sections -fdata-sections -fno-common
         -Wno-maybe-uninitialized -Wno-unused-variable -Wno-unused-but-set-variable
     )

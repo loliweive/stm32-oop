@@ -1,5 +1,5 @@
 #include "rcc.h"
-#include "stm32f103xb.h"
+#include "stm32f1xx_hal.h"
 
 void rcc_set_sysclk(RccClockSource src, uint8_t pll_mul)
 {
@@ -19,8 +19,8 @@ void rcc_set_sysclk(RccClockSource src, uint8_t pll_mul)
     /* 2. Configure PLL */
     if (pll_mul >= 2 && pll_mul <= 16) {
         uint32_t cfgr = RCC->CFGR;
-        cfgr &= ~RCC_CFGR_PLLMUL_Msk;
-        cfgr |= RCC_CFGR_PLLMUL(pll_mul);
+        cfgr &= ~RCC_CFGR_PLLMULL_Msk;
+        cfgr |= ((pll_mul - 2) << RCC_CFGR_PLLMULL_Pos);
         if (src == RCC_HSE || src == RCC_PLL) {
             cfgr |= RCC_CFGR_PLLSRC; /* HSE as PLL source */
         }
@@ -73,7 +73,7 @@ void rcc_get_config(RccConfig *cfg)
     switch (sw) {
         case RCC_CFGR_SW_PLL: {
             uint32_t pll_src = (cfgr & RCC_CFGR_PLLSRC) ? 8000000 : 4000000;
-            uint32_t mul     = ((cfgr & RCC_CFGR_PLLMUL_Msk) >> 18) + 2;
+            uint32_t mul     = ((cfgr & RCC_CFGR_PLLMULL_Msk) >> 18) + 2;
             cfg->sysclk_hz   = pll_src * mul;
             break;
         }

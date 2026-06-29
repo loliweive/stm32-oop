@@ -1,5 +1,5 @@
 #include "timer.h"
-#include "stm32f103xb.h"
+#include "stm32f1xx_hal.h"
 
 static void _init(Timer *self);
 static void _start(Timer *self);
@@ -25,26 +25,26 @@ void Timer_ctor(Timer *self, void *tim, uint32_t pclk_hz)
 
 static void _init(Timer *self)
 {
-    TIM_Type *t = (TIM_Type *)self->tim;
+    TIM_TypeDef *t = (TIM_TypeDef *)self->tim;
     t->CR1 |= TIM_CR1_ARPE;   /* Auto-reload preload enable */
     self->_init = 1;
 }
 
 static void _start(Timer *self)
 {
-    TIM_Type *t = (TIM_Type *)self->tim;
+    TIM_TypeDef *t = (TIM_TypeDef *)self->tim;
     t->CR1 |= TIM_CR1_CEN;
 }
 
 static void _stop(Timer *self)
 {
-    TIM_Type *t = (TIM_Type *)self->tim;
+    TIM_TypeDef *t = (TIM_TypeDef *)self->tim;
     t->CR1 &= ~TIM_CR1_CEN;
 }
 
 static void _set_period_us(Timer *self, uint32_t us)
 {
-    TIM_Type *t = (TIM_Type *)self->tim;
+    TIM_TypeDef *t = (TIM_TypeDef *)self->tim;
 
     /* 守卫: us=0 会导致 ARR 下溢为 0xFFFFFFFF */
     if (us == 0) return;
@@ -61,11 +61,11 @@ static void _set_period_us(Timer *self, uint32_t us)
 
 static void _set_pwm(Timer *self, uint8_t channel, uint16_t duty)
 {
-    TIM_Type *t = (TIM_Type *)self->tim;
+    TIM_TypeDef *t = (TIM_TypeDef *)self->tim;
     if (channel < 4) {
         /* duty: 0..10000 maps to 0..ARR */
         uint32_t ccr = ((uint32_t)duty * (t->ARR + 1)) / 10000;
-        t->CCR[channel] = ccr;
+        t->CCR1 = ccr;
 
         /* Configure channel for PWM mode 1 */
         uint32_t shift = channel * 8;

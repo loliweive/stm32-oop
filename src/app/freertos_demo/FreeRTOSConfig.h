@@ -17,7 +17,7 @@
 #ifndef FREERTOS_CONFIG_H
 #define FREERTOS_CONFIG_H
 
-#include "stm32f103xb.h"
+#include "stm32f1xx_hal.h"
 
 /* ── 中断处理器名称映射 ────────────────────────────────────── */
 /* FreeRTOS port.c defines vPortSVCHandler/xPortPendSVHandler/xPortSysTickHandler,

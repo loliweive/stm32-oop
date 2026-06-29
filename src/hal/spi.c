@@ -3,7 +3,7 @@
  * @brief   SPI 主机驱动 — 使用 CMSIS 位定义
  */
 #include "spi.h"
-#include "stm32f103xb.h"
+#include "stm32f1xx_hal.h"
 
 void SpiPort_ctor(SpiPort *self, void *spi, uint32_t speed_hz, uint32_t pclk_hz, uint8_t mode)
 {
@@ -16,7 +16,7 @@ void SpiPort_ctor(SpiPort *self, void *spi, uint32_t speed_hz, uint32_t pclk_hz,
 
 void spi_init(SpiPort *self)
 {
-    SPI_Type *s = (SPI_Type *)self->spi;
+    SPI_TypeDef *s = (SPI_TypeDef *)self->spi;
 
     /* 配置为主机模式 */
     uint16_t cr1 = SPI_CR1_MSTR  /* 主模式 */
@@ -40,7 +40,7 @@ void spi_init(SpiPort *self)
 
 uint8_t spi_transfer(SpiPort *self, uint8_t byte)
 {
-    SPI_Type *s = (SPI_Type *)self->spi;
+    SPI_TypeDef *s = (SPI_TypeDef *)self->spi;
 
     /* 等待 TXE: 发送缓冲区为空 */
     while (!(s->SR & SPI_SR_TXE)) {}

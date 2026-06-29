@@ -3,7 +3,7 @@
  * @brief   光敏传感器实现 — Sensor vtable + ADC + GPIO
  */
 #include "light_sensor.h"
-#include "stm32f103xb.h"
+#include "stm32f1xx_hal.h"
 #include "adc.h"
 #include "gpio.h"
 
@@ -24,7 +24,7 @@ static bool _read(Sensor *base, float *lux_pct, uint8_t *digital)
     /* ── 数字量: GPIO 读 PB11 ─────────────────────────── */
     GpioPin dpin;
     GpioPin_ctor(&dpin, self->do_port, self->do_pin);
-    gpio_set_mode(&dpin, GPIO_CNF_FLOAT | 0x0);  /* 浮空输入 */
+    gpio_set_mode(&dpin, 0x04 | 0x0);  /* 浮空输入 */
     self->digital = gpio_get(&dpin);
 
     if (lux_pct)  *lux_pct  = self->lux_pct;
@@ -42,7 +42,7 @@ static bool _init(Sensor *base)
     /* PA3 模拟输入 (ADC1_IN3) */
     GpioPin ain;
     GpioPin_ctor(&ain, GPIOA, GPIO_PIN_3);
-    gpio_set_mode(&ain, GPIO_CNF_ANALOG | GPIO_MODE_IN);
+    gpio_set_mode(&ain, 0x00 /* analog mode */ | GPIO_MODE_IN);
 
     /* 初始化 ADC */
     AdcPort adc_port;

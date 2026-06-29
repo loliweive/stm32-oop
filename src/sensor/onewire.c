@@ -10,7 +10,7 @@
  *   LDR  R, [IDR]   → 读取引脚
  */
 #include "onewire.h"
-#include "stm32f103xb.h"
+#include "stm32f1xx_hal.h"
 
 /* ── DWT 硬件周期计数器 µs 延时 (Cortex-M3, 绝对精确) ──── */
 static void _dwt_delay_us(uint32_t us) {
@@ -30,7 +30,7 @@ static void _dwt_delay_us(uint32_t us) {
 
 /* ── GPIO 寄存器访问 ──────────────────────────────────────────── */
 static inline void _pin_output(OneWireBus *bus) {
-    GPIO_Type *g = (GPIO_Type *)bus->port;
+    GPIO_TypeDef *g = (GPIO_TypeDef *)bus->port;
     /* CRL/CRH: 开漏输出, 50MHz */
     uint32_t pos = 0; uint16_t m = bus->pin; while (!(m & (1<<pos))) pos++;
     if (pos < 8) {
@@ -41,7 +41,7 @@ static inline void _pin_output(OneWireBus *bus) {
 }
 
 static inline void _pin_input(OneWireBus *bus) {
-    GPIO_Type *g = (GPIO_Type *)bus->port;
+    GPIO_TypeDef *g = (GPIO_TypeDef *)bus->port;
     uint32_t pos = 0; uint16_t m = bus->pin; while (!(m & (1<<pos))) pos++;
     if (pos < 8) {
         g->CRL = (g->CRL & ~(0xFUL << (pos*4))) | (0x4UL << (pos*4)); /* CNF=01 MODE=00 */
@@ -51,15 +51,15 @@ static inline void _pin_input(OneWireBus *bus) {
 }
 
 static inline void _pin_low(OneWireBus *bus) {
-    ((GPIO_Type *)bus->port)->BRR = bus->pin;  /* 原子写 — 置低 */
+    ((GPIO_TypeDef *)bus->port)->BRR = bus->pin;  /* 原子写 — 置低 */
 }
 
 static inline void _pin_high(OneWireBus *bus) {
-    ((GPIO_Type *)bus->port)->BSRR = bus->pin; /* 原子写 — 置高 */
+    ((GPIO_TypeDef *)bus->port)->BSRR = bus->pin; /* 原子写 — 置高 */
 }
 
 static inline uint8_t _pin_read(OneWireBus *bus) {
-    return (((GPIO_Type *)bus->port)->IDR & bus->pin) ? 1 : 0;
+    return (((GPIO_TypeDef *)bus->port)->IDR & bus->pin) ? 1 : 0;
 }
 
 /* ── 公开 API ──────────────────────────────────────────────────── */

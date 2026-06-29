@@ -3,7 +3,7 @@
  * @brief   ADC 驱动 — 使用 CMSIS 位定义
  */
 #include "adc.h"
-#include "stm32f103xb.h"
+#include "stm32f1xx_hal.h"
 
 void AdcPort_ctor(AdcPort *self, void *adc)
 {
@@ -13,7 +13,7 @@ void AdcPort_ctor(AdcPort *self, void *adc)
 
 void adc_init(AdcPort *self)
 {
-    ADC_Type *a = (ADC_Type *)self->adc;
+    ADC_TypeDef *a = (ADC_TypeDef *)self->adc;
 
     /* ADC 预分频: PCLK2/6 = 12MHz @72MHz (max 14MHz) */
     RCC->CFGR = (RCC->CFGR & ~(3<<14)) | (2<<14);  /* ADCPRE=10 → /6 */
@@ -32,7 +32,7 @@ void adc_init(AdcPort *self)
 
 uint16_t adc_read(AdcPort *self, uint8_t channel)
 {
-    ADC_Type *a = (ADC_Type *)self->adc;
+    ADC_TypeDef *a = (ADC_TypeDef *)self->adc;
 
     /* 通道范围检查: STM32F103C8T6 有 10 个外部通道 + 内部通道 */
     if (channel > 17) return 0xFFFF;
@@ -44,11 +44,11 @@ uint16_t adc_read(AdcPort *self, uint8_t channel)
     if (channel < 10) {
         uint32_t shift = channel * 3;
         a->SMPR2 = (a->SMPR2 & ~(0x7UL << shift))
-                 | (ADC_SMPR_SMP_55_5 << shift);
+                 | (ADC_SAMPLETIME_55CYCLES_5 << shift);
     } else {
         uint32_t shift = (channel - 10) * 3;
         a->SMPR1 = (a->SMPR1 & ~(0x7UL << shift))
-                 | (ADC_SMPR_SMP_55_5 << shift);
+                 | (ADC_SAMPLETIME_55CYCLES_5 << shift);
     }
 
     /* ADON: 启动转换 (第二次写 ADON 在已上电时启动转换) */
