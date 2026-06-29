@@ -12,7 +12,7 @@
 typedef struct { uint32_t CRL, CRH, IDR, ODR, BSRR, BRR, LCKR; } GPIO_Type;
 typedef struct { uint32_t SR, DR, BRR, CR1, CR2, CR3, GTPR; } USART_Type;
 typedef struct { uint32_t CR, CFGR, CIR, APB2RSTR, APB1RSTR, AHBENR, APB2ENR, APB1ENR, BDCR, CSR; } RCC_Type;
-typedef struct { uint32_t CR1, CR2, SMCR, DIER, SR, EGR, CCMR1, CCMR2, CCER, CNT, PSC, ARR, _r1, CCR[4]; } TIM_Type;
+typedef struct { uint32_t CR1, CR2, SMCR, DIER, SR, EGR, CCMR1, CCMR2, CCER, CNT, PSC, ARR, _r1, CCR1, CCR2, CCR3, CCR4; } TIM_Type;
 typedef struct { uint32_t CR1, CR2, OAR1, OAR2, DR, SR1, SR2, CCR, TRISE; } I2C_Type;
 typedef struct { uint32_t CR1, CR2, SR, DR, CRCPR, RXCRCR, TXCRCR; } SPI_Type;
 typedef struct { uint32_t SR, CR1, CR2, SMPR1, SMPR2, JOFR[4], HTR, LTR, SQR1, SQR2, SQR3, JSQR, JDR[4], DR; } ADC_Type;
@@ -75,8 +75,10 @@ typedef struct { volatile uint32_t ACR; } FLASH_Type;
 #define RCC_CFGR_SW_HSE     1
 #define RCC_CFGR_SWS_Msk    (3 << 2)
 #define RCC_CFGR_PLLSRC     (1 << 16)
-#define RCC_CFGR_PLLMUL_Msk (0xF << 18)
-#define RCC_CFGR_PLLMUL(n)  (((n)-2) << 18)
+#define RCC_CFGR_PLLMUL_Msk  (0xFUL << 18)
+#define RCC_CFGR_PLLMULL_Msk (0xFUL << 18)
+#define RCC_CFGR_PLLMULL_Pos (18U)
+#define RCC_CFGR_PLLMUL(n)   (((n)-2) << 18)
 
 /* ── FLASH macros ───────────────────────────────────────────── */
 #define FLASH_ACR_PRFTBE    (1 << 4)
@@ -95,5 +97,15 @@ typedef struct { volatile uint32_t ACR; } FLASH_Type;
 #define USART2 ((USART_Type *)0x40004400)
 #define RCC    ((RCC_Type *)0x40021000)
 #define FLASH  ((FLASH_Type *)0x40022000)
+
+/* ── STM32 HAL type aliases (TypeDef = Type on host) ─────────── */
+typedef GPIO_Type  GPIO_TypeDef;
+typedef USART_Type USART_TypeDef;
+typedef I2C_Type   I2C_TypeDef;
+typedef SPI_Type   SPI_TypeDef;
+typedef ADC_Type   ADC_TypeDef;
+typedef TIM_Type   TIM_TypeDef;
+typedef FLASH_Type FLASH_TypeDef;
+typedef RCC_Type   RCC_TypeDef;
 
 #endif /* STM32F103XB_HOST_H */

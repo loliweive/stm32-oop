@@ -48,6 +48,7 @@ function(add_host_test name)
     )
     target_include_directories(${name} PRIVATE ${TEST_INCLUDES})
     target_compile_options(${name} PRIVATE -Wall -Wextra -g -O0)
+    target_compile_definitions(${name} PRIVATE HOST_TEST)
     add_test(NAME ${name} COMMAND ${name})
 endfunction()
 
