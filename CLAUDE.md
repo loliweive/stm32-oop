@@ -228,7 +228,7 @@ main (稳定)
 
 ### 🔜 待实现
 - [ ] 将裸机版也接入 CLI + Sensor OOP
-- [ ] BMP280 / SHT30 等 I2C 传感器 (验证 OOP 可扩展性)
+- [ ] SHT30 等 I2C 传感器 (验证 OOP 可扩展性)
 - [ ] OTA 安全加固 (固件签名, 版本回滚)
 - [ ] LittleFS on SPI Flash
 - [ ] 看门狗 (IWDG)
@@ -330,7 +330,7 @@ openocd -f interface/stlink.cfg -f target/stm32f1x.cfg \
 1. **构建健康修复**:
    - 修复 `spi_flash.h` — block_size uint16_t→uint32_t (65536溢出BUG)
    - 所有 ARM 构建目标启用 `-Werror`
-   - 修复 15+ 编译警告 (cli.c/ssd1306.c/font16x16.c/bmp280.c/ds18b20.c/main.c)
+   - 修复 15+ 编译警告 (cli.c/ssd1306.c/font16x16.c/ds18b20.c/main.c)
 2. **关键问题修复**:
    - `oled_printf` vsprintf→vsnprintf (栈溢出风险)
    - `spi_flash` strcpy→strncpy (缓冲区溢出)

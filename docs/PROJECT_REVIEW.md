@@ -23,7 +23,7 @@ PC13 = LED
 
 软件栈:
 hal/  → vtable 多态 (GPIO/UART/I2C/SPI/ADC/Timer/IWDG)
-sensor/ → Sensor 抽象接口 (DHT11/DS18B20/Light/BMP280)
+sensor/ → Sensor 抽象接口 (DHT11/DS18B20/Light)
 display/ → OledDisplay 抽象 (SSD1306 128×64)
 cli/  → 命令行引擎 (ANSI, Tab补全, 历史)
 ota/  → OTA 固件升级 (HMAC签名, 外部Flash缓冲)
@@ -45,7 +45,7 @@ ota/  → OTA 固件升级 (HMAC签名, 外部Flash缓冲)
 | 外设测试 | 7个独立测试固件 + CLI综合 | ✅ |
 | 系统时钟 | 72MHz PLL, APB1=/2修复 | ✅ |
 | Bare CLI | 裸机版CLI (UART调试中) | WIP |
-| BMP280 | I2C温压传感器 (缺硬件) | 代码已备 |
+| — | (BMP280 已移除 — 无硬件) | — |
 | LittleFS | SPI Flash文件系统 | 待做 |
 | 低功耗 | Sleep/Stop/Standby | 待做 |
 
@@ -149,5 +149,5 @@ Phase 7: 交付 ─── 提交 → 分支merge → 推送远程
 | 3 | **低功耗** | 中 | Sleep/Stop/Standby + 唤醒 |
 | 4 | **中文字库** | 低 | CLI 中文提示 |
 | 5 | **OTA 生产密钥** | 低 | 替换 dev key, 密钥管理工具 |
-| 6 | **BMP280** | 低 | 需要硬件, 代码已备 |
+| 6 | **SHT30** | 低 | I2C温湿度, 需硬件 |
 | 7 | **DS18B20/DHT11** | 低 | 外设测试修复, 时序验证 |

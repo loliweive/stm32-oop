@@ -164,7 +164,6 @@ elseif(BUILD_MODE STREQUAL "freertos")
         ${STM32_SRC_DIR}/sensor/ds18b20.c
         ${STM32_SRC_DIR}/sensor/dht11.c
         ${STM32_SRC_DIR}/sensor/light_sensor.c
-        ${STM32_SRC_DIR}/sensor/bmp280.c
         ${STM32_SRC_DIR}/hal/iwdg.c
         ${STM32_SRC_DIR}/display/ssd1306.c
         ${STM32_SRC_DIR}/display/font8x16.c
