@@ -33,14 +33,8 @@ bool dht11_raw_read(DHT11 *dht)
 {
     uint8_t data[5] = {0};
 
-    /* 启动信号: 拉低 18ms — 不需要关中断 (只是等待) */
     __disable_irq();
-    _pin_out(dht); _pin_lo(dht);
-    __enable_irq();
-    DELAY_US(18000);
-
-    /* 位读取阶段: 需要精确 μs 时序 — 关中断 */
-    __disable_irq();
+    _pin_out(dht); _pin_lo(dht); DELAY_US(18000);
     _pin_hi(dht);  DELAY_US(30);
     _pin_in(dht);
 
@@ -58,9 +52,17 @@ bool dht11_raw_read(DHT11 *dht)
     }
     __enable_irq();
 
+    /* 校验 checksum — 必须通过 */
+    if ((uint8_t)(data[0]+data[1]+data[2]+data[3]) != data[4]) return false;
+
+    /* 拒绝全零 — 传感器缺失/GPIO浮空时可能全读零,
+       checksum 0+0+0+0==0 意外通过假阳性 */
+    if (data[0]==0 && data[1]==0 && data[2]==0 && data[3]==0 && data[4]==0)
+        return false;
+
     dht->temp_c  = data[2];
     dht->humidity = data[0];
-    return (uint8_t)(data[0]+data[1]+data[2]+data[3]) == data[4];
+    return true;
 }
 
 /* ── Sensor vtable 实现 ────────────────────────────────── */
