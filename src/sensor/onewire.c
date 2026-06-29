@@ -1,18 +1,11 @@
 /**
  * @file    onewire.c
- * @brief   1-Wire 总线位操作 — 直接寄存器访问 (最优时序)
- *
- * 使用 BSRR/BRR/IDR 直接操作 GPIO 寄存器,
- * 避免函数调用开销, 保证 1-Wire 严格时序。
- *
- * 每个 GPIO 操作只有 2-3 条 ARM 指令:
- *   STR  R, [BSRR]  → 引脚置高/置低
- *   LDR  R, [IDR]   → 读取引脚
+ * @brief   1-Wire 总线 — GPIO OOP vtable (HAL API internally)
  */
 #include "onewire.h"
 #include "stm32f1xx_hal.h"
 
-/* ── DWT 硬件周期计数器 µs 延时 (Cortex-M3, 绝对精确) ──── */
+/* ── DWT µs delay ─────────────────────────────────────── */
 static void _dwt_delay_us(uint32_t us) {
     uint32_t t = *(volatile uint32_t*)0xE0001004 + us * 72;
     while ((int32_t)(*(volatile uint32_t*)0xE0001004 - t) < 0) {}
@@ -20,90 +13,52 @@ static void _dwt_delay_us(uint32_t us) {
 #define DELAY_US(us) do { \
     static int _dwt_init = 0; \
     if (!_dwt_init) { \
-        *(volatile uint32_t*)0xE000EDFC |= (1<<24); /* CoreDebug DEMCR: TRCENA */ \
-        *(volatile uint32_t*)0xE0001004 = 0;         /* DWT CYCCNT = 0 */ \
-        *(volatile uint32_t*)0xE0001000 |= 1;         /* DWT CTRL: CYCCNTENA */ \
+        *(volatile uint32_t*)0xE000EDFC |= (1<<24); \
+        *(volatile uint32_t*)0xE0001004 = 0; \
+        *(volatile uint32_t*)0xE0001000 |= 1; \
         _dwt_init = 1; \
     } \
     _dwt_delay_us(us); \
 } while(0)
 
-/* ── GPIO 寄存器访问 ──────────────────────────────────────────── */
-static inline void _pin_output(OneWireBus *bus) {
-    GPIO_TypeDef *g = (GPIO_TypeDef *)bus->port;
-    /* CRL/CRH: 开漏输出, 50MHz */
-    uint32_t pos = 0; uint16_t m = bus->pin; while (!(m & (1<<pos))) pos++;
-    if (pos < 8) {
-        g->CRL = (g->CRL & ~(0xFUL << (pos*4))) | (0x7UL << (pos*4)); /* CNF=01 MODE=11 */
-    } else {
-        g->CRH = (g->CRH & ~(0xFUL << ((pos-8)*4))) | (0x7UL << ((pos-8)*4));
-    }
-}
-
-static inline void _pin_input(OneWireBus *bus) {
-    GPIO_TypeDef *g = (GPIO_TypeDef *)bus->port;
-    uint32_t pos = 0; uint16_t m = bus->pin; while (!(m & (1<<pos))) pos++;
-    if (pos < 8) {
-        g->CRL = (g->CRL & ~(0xFUL << (pos*4))) | (0x4UL << (pos*4)); /* CNF=01 MODE=00 */
-    } else {
-        g->CRH = (g->CRH & ~(0xFUL << ((pos-8)*4))) | (0x4UL << ((pos-8)*4));
-    }
-}
-
-static inline void _pin_low(OneWireBus *bus) {
-    ((GPIO_TypeDef *)bus->port)->BRR = bus->pin;  /* 原子写 — 置低 */
-}
-
-static inline void _pin_high(OneWireBus *bus) {
-    ((GPIO_TypeDef *)bus->port)->BSRR = bus->pin; /* 原子写 — 置高 */
-}
-
-static inline uint8_t _pin_read(OneWireBus *bus) {
-    return (((GPIO_TypeDef *)bus->port)->IDR & bus->pin) ? 1 : 0;
-}
-
-/* ── 公开 API ──────────────────────────────────────────────────── */
+/* All GPIO ops go through OOP vtable (→ HAL_GPIO_* internally) */
 
 void ow_init(OneWireBus *bus, void *port, uint16_t pin)
 {
-    bus->port  = port;
-    bus->pin   = pin;
+    GpioPin_ctor(&bus->pin, port, pin);
     bus->_init = 1;
 }
 
 bool ow_reset(OneWireBus *bus)
 {
     uint8_t presence;
-
     __disable_irq();
-    _pin_output(bus);               /* 开漏输出模式 */
-    _pin_low(bus);                  /* 拉低 */
-    DELAY_US(480);                   /* 复位脉冲 480µs */
-    _pin_input(bus);               /* 释放总线 (浮空输入) */
-    _pin_high(bus);                /* 空写 → 释放开漏 */
+    gpio_set_mode(&bus->pin, GPIO_MODE_OUT_OD); /* open-drain output */
+    gpio_set(&bus->pin, 0);
+    DELAY_US(480);
+    gpio_set_mode(&bus->pin, GPIO_MODE_IN_PU); /* input pull-up */
+    gpio_set(&bus->pin, 1);                     /* release bus */
     DELAY_US(70);
-    presence = _pin_read(bus);     /* 采样存在脉冲 */
+    presence = gpio_get(&bus->pin);
     __enable_irq();
-    DELAY_US(410);                   /* 等待时隙结束 */
-
-    return (presence == 0);        /* 0 = 有设备拉低 */
+    DELAY_US(410);
+    return (presence == 0);
 }
 
 void ow_write_bit(OneWireBus *bus, uint8_t bit)
 {
     __disable_irq();
-    _pin_output(bus);
-    _pin_low(bus);
-    DELAY_US(2);                     /* 拉低 2µs */
-
+    gpio_set_mode(&bus->pin, GPIO_MODE_OUT_OD);
+    gpio_set(&bus->pin, 0);
+    DELAY_US(2);
     if (bit) {
-        _pin_input(bus);           /* 释放 → 上拉电阻拉高 */
-        _pin_high(bus);
-        DELAY_US(58);               /* 保持高 60µs */
+        gpio_set_mode(&bus->pin, GPIO_MODE_IN_PU);
+        gpio_set(&bus->pin, 1);
+        DELAY_US(58);
     } else {
-        DELAY_US(58);               /* 保持低 60µs */
-        _pin_input(bus);
-        _pin_high(bus);
+        DELAY_US(58);
+        gpio_set_mode(&bus->pin, GPIO_MODE_IN_PU);
+        gpio_set(&bus->pin, 1);
     }
     __enable_irq();
     DELAY_US(1);
@@ -112,18 +67,16 @@ void ow_write_bit(OneWireBus *bus, uint8_t bit)
 uint8_t ow_read_bit(OneWireBus *bus)
 {
     uint8_t bit;
-
     __disable_irq();
-    _pin_output(bus);
-    _pin_low(bus);
-    DELAY_US(2);                     /* 拉低 2µs */
-    _pin_input(bus);               /* 释放 */
-    _pin_high(bus);
-    DELAY_US(8);                     /* 等待 8µs */
-    bit = _pin_read(bus);          /* 采样! */
+    gpio_set_mode(&bus->pin, GPIO_MODE_OUT_OD);
+    gpio_set(&bus->pin, 0);
+    DELAY_US(2);
+    gpio_set_mode(&bus->pin, GPIO_MODE_IN_PU);
+    gpio_set(&bus->pin, 1);
+    DELAY_US(8);
+    bit = gpio_get(&bus->pin);
     __enable_irq();
-    DELAY_US(50);                    /* 完成时隙 */
-
+    DELAY_US(50);
     return bit;
 }
 
@@ -145,7 +98,6 @@ uint8_t ow_read_byte(OneWireBus *bus)
     return byte;
 }
 
-/* Dallas CRC8: x^8 + x^5 + x^4 + 1 */
 uint8_t ow_crc8(const uint8_t *data, int len)
 {
     uint8_t crc = 0;
@@ -161,12 +113,11 @@ uint8_t ow_crc8(const uint8_t *data, int len)
     return crc;
 }
 
-/* ROM 搜索 — 单设备直接用 READ ROM */
 int ow_search_rom(OneWireBus *bus, uint8_t rom[][8], int max)
 {
     int found = 0;
     if (max >= 1 && ow_reset(bus)) {
-        ow_write_byte(bus, 0x33);  /* READ ROM */
+        ow_write_byte(bus, 0x33);
         for (int i = 0; i < 8; i++) {
             rom[0][i] = ow_read_byte(bus);
         }

@@ -1,4 +1,4 @@
-/** OOP I2C master driver. */
+/** OOP I2C master driver — HAL API internally */
 
 #ifndef I2C_HAL_H
 #define I2C_HAL_H
@@ -6,16 +6,15 @@
 #include <stdint.h>
 #include <stddef.h>
 #include <stdbool.h>
+#include "stm32f1xx_hal.h"
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
 typedef struct {
-    void    *i2c;       /* I2C_Type * */
-    uint32_t speed_hz;  /* 100000 or 400000 typical */
-    uint32_t pclk_hz;   /* APB1 clock */
-    bool     _init;
+    I2C_HandleTypeDef  hi2c;      /**< HAL handle (persistent) */
+    bool               _init;
 } I2cPort;
 
 void I2cPort_ctor(I2cPort *self, void *i2c, uint32_t speed_hz, uint32_t pclk_hz);
