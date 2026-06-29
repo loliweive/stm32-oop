@@ -190,15 +190,16 @@ TOKEN=$(gh auth token) && \
 1. **新功能 → 新分支**: `git checkout -b feat/<name> main`
 2. **在分支上开发和测试** — 不要直接在 main 上改
 3. **测试 + 硬件验证通过后** → `git checkout main && git merge feat/<name>`
-4. **删除分支**: `git branch -d feat/<name>`
-5. **推送远程**: `git push`
+4. **删除本地分支**: `git branch -d feat/<name>`
+5. **推送 main**: `git push`
+6. ⚠️ **feat/fix 分支只在本地，永远不推送到远程**
 
 ```
 main ───●───●───●───●───●───●  (FreeRTOS 主线)
          \       /
-feat/x    ●───●─●          (短命分支，合并后删除)
+feat/x    ●───●─●          (本地短命，合并后删除)
               \
-fix/y          ●───●        (短命分支，合并后删除)
+fix/y          ●───●        (本地短命，合并后删除)
 
 bare-metal ──●───●───●───●  (裸机并行线，独立开发)
 ```
