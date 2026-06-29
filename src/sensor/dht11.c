@@ -21,7 +21,7 @@ static void _dwt_delay_us(uint32_t us) {
     _dwt_delay_us(us); \
 } while(0)
 
-static void _pin_out(DHT11 *d)  { GPIO_Type *g=(GPIO_Type*)d->port; uint32_t p=0; uint16_t m=d->pin; while(!(m&(1<<p)))p++; if(p<8)g->CRL=(g->CRL&~(0xFUL<<(p*4)))|(0x3UL<<(p*4)); else g->CRH=(g->CRH&~(0xFUL<<((p-8)*4)))|(0x3UL<<((p-8)*4)); }
+static void _pin_out(DHT11 *d)  { GPIO_Type *g=(GPIO_Type*)d->port; uint32_t p=0; uint16_t m=d->pin; while(!(m&(1<<p)))p++; if(p<8)g->CRL=(g->CRL&~(0xFUL<<(p*4)))|(0x7UL<<(p*4)); else g->CRH=(g->CRH&~(0xFUL<<((p-8)*4)))|(0x7UL<<((p-8)*4)); }
 static void _pin_in(DHT11 *d)   { GPIO_Type *g=(GPIO_Type*)d->port; uint32_t p=0; uint16_t m=d->pin; while(!(m&(1<<p)))p++; g->BSRR=m; if(p<8)g->CRL=(g->CRL&~(0xFUL<<(p*4)))|(0x8UL<<(p*4)); else g->CRH=(g->CRH&~(0xFUL<<((p-8)*4)))|(0x8UL<<(p*4)); }
 static void _pin_lo(DHT11 *d)   { ((GPIO_Type*)d->port)->BRR = d->pin; }
 static void _pin_hi(DHT11 *d)   { ((GPIO_Type*)d->port)->BSRR = d->pin; }
