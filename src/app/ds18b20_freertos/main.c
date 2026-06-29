@@ -10,10 +10,7 @@
  */
 
 #include "stm32f103xb.h"
-#include "FreeRTOS.h"
-#include "task.h"
-#include "queue.h"
-#include "timers.h"
+#include "cmsis_os2_wrapper.h"  /* CMSIS-RTOS V2 → FreeRTOS */
 
 #include "rcc.h"
 #include "gpio.h"
@@ -68,7 +65,7 @@ typedef struct {
 } TempReading;
 
 /* ── 全局对象 ────────────────────────────────────────────── */
-static QueueHandle_t temp_queue;
+static osMessageQueueId_t temp_queue;
 static Sensor       *sensor;          /* ← 多态指针! 不关心具体类型 */
 static Sensor       *light_sensor;     /* 光敏传感器 (常驻, 独立 IO) */
 static OneWireBus    ow_bus __attribute__((unused));          /* DS18B20 复用 */
@@ -97,8 +94,8 @@ static void uart_cli_write(const char *str, size_t len)
 void vApplicationIdleHook(void) { iwdg_feed(); }
 
 /* ── 软件定时器喂狗回调 (100% 可靠, FreeRTOS 内核调度) ── */
-static TimerHandle_t iwdg_timer;
-static void _iwdg_timer_cb(TimerHandle_t t) { (void)t; iwdg_feed(); }
+static osTimerId_t iwdg_timer;
+static void _iwdg_timer_cb(void *t) { (void)t; iwdg_feed(); }
 
 static void cmd_help(CLI *c, int argc, char **argv)
 {
@@ -113,7 +110,7 @@ static void cmd_iwdg(CLI *c, int argc, char **argv)
     /* SysTick 精确计数 30s, IWDG ~10-26s 触发 (LSI 17-40kHz, RLR=4095) */
     uint32_t elapsed = 0;
     while (elapsed < 30000) {
-        vTaskDelay(pdMS_TO_TICKS(100));  /* Yield to scheduler every 100ms */
+        osDelay(100);  /* Yield to scheduler every 100ms */
         elapsed += 100;
     }
     cli_printf(c, "IWDG did NOT reset — watchdog may be disabled\r\n");
@@ -199,7 +196,7 @@ static void cmd_info(CLI *c, int argc, char **argv)
                (unsigned long)(rcc.sysclk_hz / 1000000));
     cli_printf(c, "  Flash:     64KB  SRAM: 20KB\r\n");
     cli_printf(c, "  RTOS:      FreeRTOS V11, %luHz tick\r\n",
-               (unsigned long)configTICK_RATE_HZ);
+               (unsigned long)osKernelGetTickFreq());
     cli_printf(c, "  Heap free: %lu bytes\r\n",
                (unsigned long)xPortGetFreeHeapSize());
 
@@ -239,7 +236,7 @@ static void cmd_info(CLI *c, int argc, char **argv)
 static void cmd_uptime(CLI *c, int argc, char **argv)
 {
     (void)argc; (void)argv;
-    uint32_t s = (uint32_t)(xTaskGetTickCount() / configTICK_RATE_HZ);
+    uint32_t s = (uint32_t)(osKernelGetTickCount() / osKernelGetTickFreq());
     cli_printf(c, "Runtime: %lus (%lu:%02lu:%02lu)\r\n",
                (unsigned long)s,
                (unsigned long)(s / 3600),
@@ -280,7 +277,7 @@ static void cmd_ota_start(CLI *c, int argc, char **argv)
     cli_printf(c, "  60s remaining...\r\n");
 
     /* 倒计时: 前55s每5s提醒, 最后5s每秒提醒, ESC 取消 */
-    uint32_t data_tick     = xTaskGetTickCount();
+    uint32_t data_tick     = osKernelGetTickCount();
     uint32_t last_sec      = 0;
     int last_pct = -1;
     bool esc_pressed = false;
@@ -289,11 +286,11 @@ static void cmd_ota_start(CLI *c, int argc, char **argv)
         /* ESC 取消 */
         if (ota_xport_ctx.cancelled) { esc_pressed = true; break; }
         if (ota_client_get_state(&ota_client) >= OTA_STATE_RECEIVING) {
-            data_tick = xTaskGetTickCount();
+            data_tick = osKernelGetTickCount();
             int pct = ota_client_get_progress(&ota_client);
             if (pct != last_pct) { cli_printf(c, "  %d%%\r\n", pct); last_pct = pct; }
         } else {
-            uint32_t sec = (xTaskGetTickCount() - data_tick) / configTICK_RATE_HZ;
+            uint32_t sec = (osKernelGetTickCount() - data_tick) / osKernelGetTickFreq();
             uint32_t remaining = 60 - sec;
             if (sec > last_sec) {
                 last_sec = sec;
@@ -302,7 +299,7 @@ static void cmd_ota_start(CLI *c, int argc, char **argv)
             }
             if (sec >= 60) break;
         }
-        vTaskDelay(pdMS_TO_TICKS(10));
+        osDelay(10);
     }
 
     if (ota_client_get_state(&ota_client) != OTA_STATE_COMPLETE) {
@@ -374,7 +371,7 @@ static void cmd_reset(CLI *c, int argc, char **argv)
 {
     (void)c; (void)argc; (void)argv;
     cli_printf(c, "Resetting...\r\n");
-    vTaskDelay(pdMS_TO_TICKS(100));
+    osDelay(100);
 
     /* SCB AIRCR 软复位 */
     #define AIRCR_ADDR         ((volatile uint32_t *)0xE000ED0CUL)
@@ -417,7 +414,7 @@ static void task_sensor(void *params)
     sensor = ds18b20_create(&ds18b20_obj, &ow_bus);
 #elif SENSOR_TYPE == SENSOR_DHT11
     sensor = dht11_create(&dht11_obj, SENSOR_PORT, SENSOR_PIN);
-    vTaskDelay(pdMS_TO_TICKS(1000));  /* DHT11 上电等待 1s */
+    osDelay(1000);  /* DHT11 上电等待 1s */
 #elif SENSOR_TYPE == SENSOR_LIGHT
     sensor = light_sensor_create(&light_obj,
                 ADC1, 3,         /* PA3 = ADC1_IN3 模拟量 */
@@ -433,9 +430,9 @@ static void task_sensor(void *params)
     /* ── 检查传感器是否就绪 ──────────────────────────────── */
     if (!sensor || !sensor_is_present(sensor)) {
         memset(&r, 0, sizeof(r)); r.valid = false;
-        r.timestamp_ms = xTaskGetTickCount();
-        xQueueSend(temp_queue, &r, 0);
-        vTaskDelete(NULL);
+        r.timestamp_ms = osKernelGetTickCount();
+        osMessageQueuePut(temp_queue, &r, 0, 0);
+        osThreadExit();
     }
 
     /* ── 采样循环 — 完全多态, 无传感器类型判断! ──────────── */
@@ -443,9 +440,10 @@ static void task_sensor(void *params)
         gpio_set(&led, 0);  /* LED 亮 — 采样中 */
 
         r.valid = sensor_read(sensor, &r.temp_c, &r.humidity);
-        r.timestamp_ms = xTaskGetTickCount();
+        r.timestamp_ms = osKernelGetTickCount();
 
-        xQueueOverwrite(temp_queue, &r);
+        osMessageQueueGet(temp_queue, &r, NULL, 0);  /* drain */
+        osMessageQueuePut(temp_queue, &r, 0, 0);     /* overwrite */
 
         /* 刷新 OLED 显示 */
         if (r.valid) {
@@ -485,7 +483,7 @@ static void task_sensor(void *params)
             _tx('\r');_tx('\n');
             #undef _tx
         }
-        vTaskDelay(pdMS_TO_TICKS(stream_mode ? 1000 : 2000));
+        osDelay(stream_mode ? 1000 : 2000);
     }
 }
 
@@ -535,14 +533,14 @@ static void task_cli(void *params)
             }
             __asm__("nop");
         }
-        vTaskDelay(pdMS_TO_TICKS(5));
+        osDelay(5);
         iwdg_feed();
 
         /* temp-stream: 从队列读并输出 (CLI context, 无重入风险) */
         if (stream_mode) {
             TempReading sr;
             static uint32_t last_ts = 0;
-            if (xQueueReceive(temp_queue, &sr, 0) == pdTRUE && sr.valid) {
+            if (osMessageQueueGet(temp_queue, &sr, NULL, 0) == 0 && sr.valid) {
                 if (sr.timestamp_ms != last_ts) {
                     last_ts = sr.timestamp_ms;
                     /* Raw UART — bypass cli_printf, no crash risk */
@@ -638,23 +636,26 @@ int main(void)
 #endif
 
     /* 创建温度数据队列 */
-    temp_queue = xQueueCreate(1, sizeof(TempReading));
-    configASSERT(temp_queue != NULL);
+    temp_queue = osMessageQueueNew(1, sizeof(TempReading), NULL);
     DLOG("CP5: Q ok");
 
-    /* 创建任务 */
-    xTaskCreate(task_sensor,  "Sensor", 128, NULL, 1, NULL);
-    xTaskCreate(task_cli,     "CLI",    512, NULL, 2, NULL);
+    /* 创建任务 (CMSIS-RTOS V2) */
+    {
+        osThreadAttr_t sensor_attr = { .name = "Sensor", .stack_size = 128, .priority = 1 };
+        osThreadAttr_t cli_attr    = { .name = "CLI",    .stack_size = 512, .priority = 2 };
+        osThreadNew(task_sensor, NULL, &sensor_attr);
+        osThreadNew(task_cli,    NULL, &cli_attr);
+    }
     DLOG("CP6: tasks ok");
 
     /* IWDG: 必须在调度器启动前最后一刻初始化, 否则提前超时复位 */
     iwdg_init(6, 0xFFF);  /* PR=6 /256, RLR=4095: ~10-26s timeout */
     /* 软件定时器每 1s 喂狗 (优先级3, 高于所有任务) */
-    iwdg_timer = xTimerCreate("iwdg", pdMS_TO_TICKS(1000), pdTRUE, NULL, _iwdg_timer_cb);
-    xTimerStart(iwdg_timer, 0);;  /* PR=6 /256, RLR=4095: ~10-26s (LSI 17-40kHz). 防误复位 */
+    iwdg_timer = osTimerNew(_iwdg_timer_cb, osTimerPeriodic, NULL, NULL);
+    osTimerStart(iwdg_timer, 1000);  /* 1s period */
     DLOG("CP7: IWDG ok");
 
-    vTaskStartScheduler();
+    osKernelStart();
     DLOG("CP7: NEVER");  /* should never reach */
     while (1) {}
     return 0;

@@ -119,6 +119,7 @@ elseif(BUILD_MODE STREQUAL "freertos")
         "${FREERTOS_DIR}/include"
         "${FREERTOS_DIR}/portable/GCC/ARM_CM3"
         "${CMAKE_SOURCE_DIR}/lib/cmsis"
+        "${CMAKE_SOURCE_DIR}/lib/cmsis_rtos"
         "${CMAKE_SOURCE_DIR}/lib/stm32f1"
         "${STM32_SRC_DIR}/core"
         "${STM32_SRC_DIR}/hal"
@@ -140,6 +141,7 @@ elseif(BUILD_MODE STREQUAL "freertos")
         ${FREERTOS_DIR}/timers.c
         ${FREERTOS_DIR}/portable/GCC/ARM_CM3/port.c
         ${FREERTOS_DIR}/portable/MemMang/heap_4.c
+        ${CMAKE_SOURCE_DIR}/lib/cmsis_rtos/cmsis_os2.c
     )
 
     add_executable(${PROJECT_NAME}
@@ -201,6 +203,7 @@ elseif(BUILD_MODE STREQUAL "freertos")
     target_compile_definitions(${PROJECT_NAME} PRIVATE
         STM32F103xB
         USE_FREERTOS
+        USE_CMSIS_RTOS_V2
     )
 
     # Post-build: generate .bin / .hex / size report
