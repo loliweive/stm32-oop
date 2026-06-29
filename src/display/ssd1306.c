@@ -20,67 +20,17 @@
 #include <stdio.h>
 #include <stdarg.h>
 
-/* ── 目标硬件 I2C 寄存器操作 ────────────────────────── */
+/* ── 目标硬件 I2C — HAL bulk transfer ────────────────── */
 #ifdef STM32F103xB
 #include "stm32f1xx_hal.h"
 
-/**
- * @brief 低层 I2C 写 (绕过 I2cPort 封装，直接操作寄存器)
- *
- * 用于 OLED 数据批量传输，避免 I2cPort 的每次分帧开销。
- * SSD1306 每页刷新需要一次发送 129 字节 (控制字节+128数据)，
- * 直接寄存器操作显著减少 CPU 开销。
- */
-/* I2C 总线恢复 — 外设复位 + STOP，解锁被从机拉死的总线 */
-static void _i2c_recover(I2C_TypeDef *i)
-{
-    i->CR1 |= I2C_CR1_STOP;       /* 确保 STOP */
-    i->CR1 |= I2C_CR1_SWRST;      /* 软件复位 I2C 外设 */
-    i->CR1 &= ~I2C_CR1_SWRST;     /* 解除复位 */
-}
-
 static bool i2c_write_raw(void *i2c, uint8_t addr, const uint8_t *data, size_t len)
 {
-    I2C_TypeDef *i = (I2C_TypeDef *)i2c;
-    uint32_t to;
-
-    /* 等待总线空闲 */
-    to = 100000;
-    while ((i->SR2 & I2C_SR2_BUSY) && --to) {}
-    if (!to) { _i2c_recover(i); return false; }
-
-    /* START */
-    i->CR1 |= I2C_CR1_START;
-    to = 100000;
-    while (!(i->SR1 & I2C_SR1_SB) && --to) {}
-    if (!to) { _i2c_recover(i); return false; }
-
-    /* ADDR (write) */
-    i->DR = (uint8_t)(addr << 1);
-    to = 100000;
-    while (!(i->SR1 & (I2C_SR1_ADDR | I2C_SR1_AF)) && --to) {}
-    if (!to || (i->SR1 & I2C_SR1_AF)) {
-        (void)i->SR2;
-        _i2c_recover(i);
-        return false;
-    }
-    (void)i->SR2; /* clear ADDR */
-
-    /* DATA */
-    for (size_t n = 0; n < len; n++) {
-        to = 100000;
-        while (!(i->SR1 & I2C_SR1_TXE) && --to) {}
-        if (!to) { _i2c_recover(i); return false; }
-        i->DR = data[n];
-    }
-
-    /* 等待 BTF (字节传输完成) */
-    to = 100000;
-    while (!(i->SR1 & I2C_SR1_BTF) && --to) {}
-
-    /* STOP */
-    i->CR1 |= I2C_CR1_STOP;
-    return true;
+    I2C_HandleTypeDef hi2c;
+    hi2c.Instance = (I2C_TypeDef *)i2c;
+    hi2c.State = HAL_I2C_STATE_READY;
+    return HAL_I2C_Master_Transmit(&hi2c, (uint16_t)(addr << 1),
+                                   (uint8_t *)data, (uint16_t)len, 100) == HAL_OK;
 }
 
 #else /* HOST_TEST — mock 实现 */
