@@ -174,6 +174,7 @@ const uint8_t APBPrescTable[8U] =  {0, 0, 0, 0, 1, 2, 3, 4};
   */
 void SystemInit (void)
 {
+  FLASH->ACR = FLASH_ACR_PRFTBE | FLASH_ACR_LATENCY_2;
 #if defined(STM32F100xE) || defined(STM32F101xE) || defined(STM32F101xG) || defined(STM32F103xE) || defined(STM32F103xG)
   #ifdef DATA_IN_ExtSRAM
     SystemInit_ExtMemCtl(); 

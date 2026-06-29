@@ -574,6 +574,7 @@ static void _dputs(const char *s) { while(*s) _dputc(*s++); }
 int main(void)
 {
     rcc_set_sysclk(RCC_PLL, 9);
+    SystemCoreClockUpdate(); /* sync HAL global after clock config */
     rcc_enable_gpio('A'); rcc_enable_gpio('C'); rcc_enable_usart(1);
     /* Release JTAG pins (PA15/PB3/PB4 freed for GPIO), keep SWD.
        SWJ_CFG=010 = JTAG-DP disabled, SW-DP enabled */
