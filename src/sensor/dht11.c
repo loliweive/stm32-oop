@@ -33,8 +33,14 @@ bool dht11_raw_read(DHT11 *dht)
 {
     uint8_t data[5] = {0};
 
+    /* 启动信号: 拉低 18ms — 不需要关中断 (只是等待) */
     __disable_irq();
-    _pin_out(dht); _pin_lo(dht); DELAY_US(18000);
+    _pin_out(dht); _pin_lo(dht);
+    __enable_irq();
+    DELAY_US(18000);
+
+    /* 位读取阶段: 需要精确 μs 时序 — 关中断 */
+    __disable_irq();
     _pin_hi(dht);  DELAY_US(30);
     _pin_in(dht);
 

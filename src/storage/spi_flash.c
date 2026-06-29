@@ -1,10 +1,10 @@
 /**
  * @file    spi_flash.c
- * @brief   SPI Flash W25Qxx 驱动实现
+ * @brief   SPI Flash W25Qxx 驱动实现 — 持久化 HAL 对象
  */
 #include "spi_flash.h"
-#include "spi.h"
 #include "gpio.h"
+#include "spi.h"
 #include "stm32f103xb.h"
 #include <string.h>
 
@@ -20,62 +20,50 @@
 #define CMD_JEDEC_ID        0x9F
 #define STATUS_BUSY         0x01
 
-/* ── CS 控制 ────────────────────────────────────────────── */
-static void _cs_low(SpiFlash *f) {
-    GpioPin cs; GpioPin_ctor(&cs, f->cs_port, f->cs_pin);
-    gpio_set_mode(&cs, GPIO_MODE_OUT_PP); gpio_set(&cs, 0);
-}
-static void _cs_high(SpiFlash *f) {
-    GpioPin cs; GpioPin_ctor(&cs, f->cs_port, f->cs_pin);
-    gpio_set(&cs, 1);
-}
-
-/* ── SPI 传输 ───────────────────────────────────────────── */
+/* ── SPI 传输 (复用持久化 SpiPort) ─────────────────────────── */
 static uint8_t _spi_xfer(SpiFlash *f, uint8_t byte) {
-    SpiPort sp; SpiPort_ctor(&sp, f->spi, 1000000, 72000000, 0);
-    return spi_transfer(&sp, byte);
+    return spi_transfer(&f->spi_port, byte);
 }
 
 static void _spi_read(SpiFlash *f, uint8_t *buf, size_t len) {
-    SpiPort sp; SpiPort_ctor(&sp, f->spi, 1000000, 72000000, 0);
-    for (size_t i = 0; i < len; i++) buf[i] = spi_transfer(&sp, 0xFF);
+    for (size_t i = 0; i < len; i++) buf[i] = spi_transfer(&f->spi_port, 0xFF);
 }
 
 /* ── API ────────────────────────────────────────────────── */
 
 void spi_flash_wait_busy(SpiFlash *flash)
 {
-    _cs_low(flash);
+    gpio_set(&flash->cs, 0);  /* CS low */
     _spi_xfer(flash, CMD_READ_STATUS);
     while (_spi_xfer(flash, 0xFF) & STATUS_BUSY) {}
-    _cs_high(flash);
+    gpio_set(&flash->cs, 1);  /* CS high */
 }
 
 uint8_t spi_flash_read_status(SpiFlash *flash)
 {
-    _cs_low(flash);
+    gpio_set(&flash->cs, 0);
     _spi_xfer(flash, CMD_READ_STATUS);
     uint8_t s = _spi_xfer(flash, 0xFF);
-    _cs_high(flash);
+    gpio_set(&flash->cs, 1);
     return s;
 }
 
 static void _write_enable(SpiFlash *flash)
 {
-    _cs_low(flash);
+    gpio_set(&flash->cs, 0);
     _spi_xfer(flash, CMD_WRITE_ENABLE);
-    _cs_high(flash);
+    gpio_set(&flash->cs, 1);
 }
 
 uint32_t spi_flash_read_jedec_id(SpiFlash *flash)
 {
     uint32_t id = 0;
-    _cs_low(flash);
+    gpio_set(&flash->cs, 0);
     _spi_xfer(flash, CMD_JEDEC_ID);
     id  = (uint32_t)_spi_xfer(flash, 0xFF) << 16;
     id |= (uint32_t)_spi_xfer(flash, 0xFF) << 8;
     id |= (uint32_t)_spi_xfer(flash, 0xFF);
-    _cs_high(flash);
+    gpio_set(&flash->cs, 1);
     return id;
 }
 
@@ -102,17 +90,14 @@ static bool _detect_flash(SpiFlash *flash)
 bool spi_flash_init(SpiFlash *flash, void *spi, void *cs_port, uint16_t cs_pin)
 {
     memset(flash, 0, sizeof(*flash));
-    flash->spi     = spi;
-    flash->cs_port = cs_port;
-    flash->cs_pin  = cs_pin;
 
-    /* 初始化 CS 为高 (不选中) */
-    _cs_high(flash);
+    /* 构造持久化 HAL 对象 — 整个生命周期只构造一次 */
+    GpioPin_ctor(&flash->cs, cs_port, cs_pin);
+    gpio_set_mode(&flash->cs, GPIO_MODE_OUT_PP);
+    gpio_set(&flash->cs, 1);  /* CS 初始为高 */
 
-    /* 初始化 SPI */
-    SpiPort sp;
-    SpiPort_ctor(&sp, spi, 1000000, 72000000, 0);  /* 1MHz, mode 0 */
-    spi_init(&sp);
+    SpiPort_ctor(&flash->spi_port, spi, 1000000, 72000000, 0);
+    spi_init(&flash->spi_port);
 
     return _detect_flash(flash);
 }
@@ -123,13 +108,13 @@ bool spi_flash_read(SpiFlash *flash, uint32_t addr, uint8_t *buf, size_t len)
 {
     if (!flash->ready || addr + len > flash->info.capacity) return false;
 
-    _cs_low(flash);
+    gpio_set(&flash->cs, 0);
     _spi_xfer(flash, CMD_READ_DATA);
     _spi_xfer(flash, (uint8_t)(addr >> 16));
     _spi_xfer(flash, (uint8_t)(addr >> 8));
     _spi_xfer(flash, (uint8_t)(addr));
     _spi_read(flash, buf, len);
-    _cs_high(flash);
+    gpio_set(&flash->cs, 1);
     return true;
 }
 
@@ -143,7 +128,7 @@ bool spi_flash_write(SpiFlash *flash, uint32_t addr, const uint8_t *data, size_t
 
     while (remaining > 0) {
         _write_enable(flash);
-        _cs_low(flash);
+        gpio_set(&flash->cs, 0);
         _spi_xfer(flash, CMD_PAGE_PROGRAM);
         _spi_xfer(flash, (uint8_t)(cur_addr >> 16));
         _spi_xfer(flash, (uint8_t)(cur_addr >> 8));
@@ -153,7 +138,7 @@ bool spi_flash_write(SpiFlash *flash, uint32_t addr, const uint8_t *data, size_t
         if (chunk > remaining) chunk = remaining;
 
         for (size_t i = 0; i < chunk; i++) _spi_xfer(flash, src[i]);
-        _cs_high(flash);
+        gpio_set(&flash->cs, 1);
 
         spi_flash_wait_busy(flash);
         src       += chunk;
@@ -167,12 +152,12 @@ bool spi_flash_erase_sector(SpiFlash *flash, uint32_t addr)
 {
     if (!flash->ready) return false;
     _write_enable(flash);
-    _cs_low(flash);
+    gpio_set(&flash->cs, 0);
     _spi_xfer(flash, CMD_SECTOR_ERASE);
     _spi_xfer(flash, (uint8_t)(addr >> 16));
     _spi_xfer(flash, (uint8_t)(addr >> 8));
     _spi_xfer(flash, (uint8_t)(addr));
-    _cs_high(flash);
+    gpio_set(&flash->cs, 1);
     spi_flash_wait_busy(flash);
     return true;
 }
@@ -181,12 +166,12 @@ bool spi_flash_erase_block(SpiFlash *flash, uint32_t addr)
 {
     if (!flash->ready) return false;
     _write_enable(flash);
-    _cs_low(flash);
+    gpio_set(&flash->cs, 0);
     _spi_xfer(flash, CMD_BLOCK_ERASE);
     _spi_xfer(flash, (uint8_t)(addr >> 16));
     _spi_xfer(flash, (uint8_t)(addr >> 8));
     _spi_xfer(flash, (uint8_t)(addr));
-    _cs_high(flash);
+    gpio_set(&flash->cs, 1);
     spi_flash_wait_busy(flash);
     return true;
 }
@@ -195,9 +180,9 @@ bool spi_flash_erase_chip(SpiFlash *flash)
 {
     if (!flash->ready) return false;
     _write_enable(flash);
-    _cs_low(flash);
+    gpio_set(&flash->cs, 0);
     _spi_xfer(flash, CMD_CHIP_ERASE);
-    _cs_high(flash);
+    gpio_set(&flash->cs, 1);
     spi_flash_wait_busy(flash);  /* 全片擦除可能需要 40-80 秒! */
     return true;
 }

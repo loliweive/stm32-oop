@@ -18,6 +18,8 @@
 #include <stdint.h>
 #include <stddef.h>
 #include <stdbool.h>
+#include "gpio.h"
+#include "spi.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -35,11 +37,10 @@ typedef struct {
 
 /* ── Flash 对象 ─────────────────────────────────────────── */
 typedef struct {
-    void    *spi;            /**< SPI 外设 (SPI1) */
-    void    *cs_port;        /**< CS GPIO 端口 (GPIOB) */
-    uint16_t cs_pin;         /**< CS GPIO 引脚 (GPIO_PIN_9) */
+    GpioPin      cs;         /**< CS 引脚 (持久化, 避免每次构造) */
+    SpiPort      spi_port;   /**< SPI 端口 (持久化, 避免每次构造) */
     SpiFlashInfo info;       /**< 检测到的 Flash 信息 */
-    bool    ready;           /**< 初始化完成 */
+    bool         ready;      /**< 初始化完成 */
 } SpiFlash;
 
 /**

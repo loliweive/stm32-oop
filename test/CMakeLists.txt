@@ -30,6 +30,7 @@ set(TEST_INCLUDES
     ${ROOT_DIR}/src/core
     ${ROOT_DIR}/src/utils
     ${ROOT_DIR}/src/hal
+    ${ROOT_DIR}/src/cli
     ${ROOT_DIR}/src/ota
     ${ROOT_DIR}/src/display
     ${ROOT_DIR}/lib/stm32f1
@@ -135,4 +136,24 @@ set(SSD1306_SRC
 add_host_test(test_ssd1306
     ${SSD1306_SRC}
     ${TEST_DIR}/test_ssd1306.c
+)
+
+# CRC32 test (pure logic, no hardware needed)
+set(CRC32_SRC
+    ${ROOT_DIR}/src/utils/crc32.c
+)
+
+add_host_test(test_crc32
+    ${CRC32_SRC}
+    ${TEST_DIR}/test_crc32.c
+)
+
+# CLI test (pure logic, mock write_fn)
+set(CLI_SRC
+    ${ROOT_DIR}/src/cli/cli.c
+)
+
+add_host_test(test_cli
+    ${CLI_SRC}
+    ${TEST_DIR}/test_cli.c
 )

@@ -12,10 +12,20 @@
 #include "onewire.h"
 #include "stm32f103xb.h"
 
-/* ── 延时 — 72MHz 指令循环校准 ────────────────────────────────── */
+/* ── DWT 硬件周期计数器 µs 延时 (Cortex-M3, 绝对精确) ──── */
+static void _dwt_delay_us(uint32_t us) {
+    uint32_t t = *(volatile uint32_t*)0xE0001004 + us * 72;
+    while ((int32_t)(*(volatile uint32_t*)0xE0001004 - t) < 0) {}
+}
 #define DELAY_US(us) do { \
-    volatile uint32_t _c = (uint32_t)(us) * 6; \
-    while (_c--) { __asm__ volatile("nop"); } \
+    static int _dwt_init = 0; \
+    if (!_dwt_init) { \
+        *(volatile uint32_t*)0xE000EDFC |= (1<<24); /* CoreDebug DEMCR: TRCENA */ \
+        *(volatile uint32_t*)0xE0001004 = 0;         /* DWT CYCCNT = 0 */ \
+        *(volatile uint32_t*)0xE0001000 |= 1;         /* DWT CTRL: CYCCNTENA */ \
+        _dwt_init = 1; \
+    } \
+    _dwt_delay_us(us); \
 } while(0)
 
 /* ── GPIO 寄存器访问 ──────────────────────────────────────────── */

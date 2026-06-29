@@ -10,6 +10,22 @@
 #include "i2c.h"
 #include <math.h>
 
+/* ── DWT 硬件周期计数器 µs 延时 ──────────────────────────── */
+static void _dwt_delay_us(uint32_t us) {
+    uint32_t t = *(volatile uint32_t*)0xE0001004 + us * 72;
+    while ((int32_t)(*(volatile uint32_t*)0xE0001004 - t) < 0) {}
+}
+#define DELAY_MS(ms) do { \
+    static int _dwt_init = 0; \
+    if (!_dwt_init) { \
+        *(volatile uint32_t*)0xE000EDFC |= (1<<24); \
+        *(volatile uint32_t*)0xE0001004 = 0; \
+        *(volatile uint32_t*)0xE0001000 |= 1; \
+        _dwt_init = 1; \
+    } \
+    for (uint32_t _i = 0; _i < (ms); _i++) _dwt_delay_us(1000); \
+} while(0)
+
 /* ── I2C 辅助 ────────────────────────────────────────── */
 
 static bool _write_reg(BMP280 *bmp, uint8_t reg, uint8_t val) {
@@ -121,7 +137,7 @@ static bool _read(Sensor *base, float *temp_c, uint8_t *humidity) {
     _write_reg(self, 0xF4, 0x25);  /* 0x25 = 0010 0101 */
 
     /* Wait for measurement (max 9.3ms) */
-    for (volatile int i = 0; i < 720000; i++) __asm__("nop");  /* ~10ms @72MHz */
+    DELAY_MS(10);  /* 等待测量完成 (max 9.3ms) */
 
     /* Read data (6 bytes: press_msb, press_lsb, press_xlsb, temp_msb, temp_lsb, temp_xlsb) */
     uint8_t data[6];
@@ -194,7 +210,7 @@ float bmp280_get_pressure(Sensor *base) {
 
     /* 触发测量并读取 */
     _write_reg(self, 0xF4, 0x25);  /* forced mode */
-    for (volatile int i = 0; i < 720000; i++) __asm__("nop");
+    DELAY_MS(10);  /* 等待测量完成 (max 9.3ms) */
 
     uint8_t data[6];
     if (!_read_multi(self, 0xF7, data, 6)) return -1.0f;
