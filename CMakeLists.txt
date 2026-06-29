@@ -47,7 +47,7 @@ elseif(BUILD_MODE STREQUAL "stm32f103")
 
     add_executable(${PROJECT_NAME}
         ${STM32_SRC_DIR}/startup/startup_stm32f103c8.s
-        ${STM32_SRC_DIR}/startup/system_stm32f1.c
+        ${STM32_SRC_DIR}/startup/system_stm32f1xx.c
         ${STM32_SRC_DIR}/core/ring_buffer.c
         ${STM32_SRC_DIR}/core/list.c
         ${STM32_SRC_DIR}/core/state_machine.c
@@ -163,7 +163,7 @@ elseif(BUILD_MODE STREQUAL "freertos")
 
     add_executable(${PROJECT_NAME}
         ${STM32_SRC_DIR}/startup/startup_stm32f103c8.s
-        ${STM32_SRC_DIR}/startup/system_stm32f1.c
+        ${STM32_SRC_DIR}/startup/system_stm32f1xx.c
         ${STM32_SRC_DIR}/core/ring_buffer.c
         ${STM32_SRC_DIR}/core/list.c
         ${STM32_SRC_DIR}/core/state_machine.c
@@ -250,7 +250,7 @@ elseif(BUILD_MODE STREQUAL "bootloader")
 
     add_executable(${PROJECT_NAME}
         ${STM32_SRC_DIR}/startup/startup_stm32f103c8.s
-        ${STM32_SRC_DIR}/startup/system_stm32f1.c
+        ${STM32_SRC_DIR}/startup/system_stm32f1xx.c
         ${STM32_SRC_DIR}/core/ring_buffer.c
         ${STM32_SRC_DIR}/core/list.c
         ${STM32_SRC_DIR}/hal/gpio.c
@@ -314,7 +314,7 @@ elseif(BUILD_MODE STREQUAL "peripheral")
     # Common sources for all peripheral tests
     set(PERIPHERAL_COMMON_SRC
         ${STM32_SRC_DIR}/startup/startup_stm32f103c8.s
-        ${STM32_SRC_DIR}/startup/system_stm32f1.c
+        ${STM32_SRC_DIR}/startup/system_stm32f1xx.c
         ${STM32_SRC_DIR}/hal/gpio.c
         ${STM32_SRC_DIR}/hal/rcc.c
     )

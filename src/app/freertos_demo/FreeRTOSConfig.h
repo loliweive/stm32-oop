@@ -27,8 +27,9 @@
 #define xPortPendSVHandler      PendSV_Handler
 #define xPortSysTickHandler     SysTick_Handler
 
-/* ── 时钟 ──────────────────────────────────────────────────── */
-#define configCPU_CLOCK_HZ                      (72000000UL)  /* 72MHz PLL — must match actual clock! */
+/* ── 时钟 — dynamic, follows SystemCoreClock set by HAL RCC ──── */
+extern uint32_t SystemCoreClock;
+#define configCPU_CLOCK_HZ                      (SystemCoreClock)
 #define configTICK_RATE_HZ                      ((TickType_t)1000)  /* 1ms tick */
 
 /* ── Tick 类型 ──────────────────────────────────────────────── */

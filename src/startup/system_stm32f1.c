@@ -2,7 +2,7 @@
  * System initialization for STM32F103C8T6.
  * Configures HSE (8MHz external crystal) → PLL (×9) → 72MHz SYSCLK.
  */
-#include "stm32f1xx_hal.h"
+#include "stm32f103xb.h"
 
 /* Default: HSI 8MHz — PLL disabled until configured by RCC driver */
 void SystemInit(void)

@@ -575,6 +575,11 @@ int main(void)
 {
     rcc_set_sysclk(RCC_PLL, 9);
     rcc_enable_gpio('A'); rcc_enable_gpio('C'); rcc_enable_usart(1);
+    /* Release JTAG pins (PA15/PB3/PB4 freed for GPIO), keep SWD.
+       SWJ_CFG=010 = JTAG-DP disabled, SW-DP enabled */
+    __HAL_RCC_AFIO_CLK_ENABLE();
+    AFIO->MAPR = (AFIO->MAPR & ~AFIO_MAPR_SWJ_CFG_Msk)
+               | (2UL << AFIO_MAPR_SWJ_CFG_Pos);
 
     /* Raw UART init for diagnostics */
     GPIOA->CRH = (GPIOA->CRH & ~(0xF<<4)) | (0xB<<4); /* PA9 TX */
