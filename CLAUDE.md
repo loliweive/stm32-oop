@@ -177,21 +177,33 @@ TOKEN=$(gh auth token) && \
   git push "https://loliweive:${TOKEN}@ghproxy.net/https://github.com/loliweive/stm32-oop.git" main
 ```
 
-### 分支
-- `main` — 唯一分支, 所有开发在此
+### 分支 (GitHub Flow)
+
+| 分支 | 定位 | 说明 |
+|------|------|------|
+| `main` | FreeRTOS 主线 | 全功能，STM32 HAL + CMSIS-RTOS V2 |
+| `bare-metal` | 裸机开发线 | 无 RTOS，共用 HAL/core/display/cli |
+| `feat/*` | 功能分支 | 从 main 分出，合并后删除 |
+| `fix/*` | 修复分支 | 从 main 分出，合并后删除 |
 
 ### 分支工作流 (强制)
-1. **新功能 → 新分支**: `git checkout -b feat/<name>`
+1. **新功能 → 新分支**: `git checkout -b feat/<name> main`
 2. **在分支上开发和测试** — 不要直接在 main 上改
-3. **测试完全通过后** → merge 到 main
-4. **最后推送远程**
+3. **测试 + 硬件验证通过后** → `git checkout main && git merge feat/<name>`
+4. **删除分支**: `git branch -d feat/<name>`
+5. **推送远程**: `git push`
 
 ```
-main (稳定)
-  ├── feat/xxx (开发+测试)
-  ├── fix/xxx  (bug修复)
-  └── (merge 回 main 后删除)
+main ───●───●───●───●───●───●  (FreeRTOS 主线)
+         \       /
+feat/x    ●───●─●          (短命分支，合并后删除)
+              \
+fix/y          ●───●        (短命分支，合并后删除)
+
+bare-metal ──●───●───●───●  (裸机并行线，独立开发)
 ```
+
+**main ↔ bare-metal 同步**: 公共代码 (HAL/core/cli/display/storage) 在两个分支都改时，用 `cherry-pick` 或手动同步。
 
 ### 提交规范
 - `feat:` 新功能
