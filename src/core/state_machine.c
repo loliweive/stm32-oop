@@ -127,14 +127,16 @@ bool sm_dispatch(StateMachine *fsm, uint32_t event)
                     fsm->on_transition(fsm, fsm->current, t->target, event);
                 }
 
-                /* 退出现态 → 进入新态 */
-                State *from = fsm->current;
-                fsm->transitioning = true;      /* 设置重入保护 */
-                exit_state(fsm, from);
-                fsm->previous = from;           /* 记录上一个状态 */
-                fsm->current  = t->target;
-                enter_state(fsm, t->target);
-                fsm->transitioning = false;     /* 解除重入保护 */
+                /* 退出现态 → 进入新态 (target=NULL = self-transition, 仅执行action) */
+                if (t->target != NULL) {
+                    State *from = fsm->current;
+                    fsm->transitioning = true;      /* 设置重入保护 */
+                    exit_state(fsm, from);
+                    fsm->previous = from;           /* 记录上一个状态 */
+                    fsm->current  = t->target;
+                    enter_state(fsm, t->target);
+                    fsm->transitioning = false;     /* 解除重入保护 */
+                }
 
                 return true;
             }

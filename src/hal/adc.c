@@ -45,6 +45,10 @@ uint16_t adc_read(AdcPort *self, uint8_t channel)
         uint32_t shift = channel * 3;
         a->SMPR2 = (a->SMPR2 & ~(0x7UL << shift))
                  | (ADC_SMPR_SMP_55_5 << shift);
+    } else {
+        uint32_t shift = (channel - 10) * 3;
+        a->SMPR1 = (a->SMPR1 & ~(0x7UL << shift))
+                 | (ADC_SMPR_SMP_55_5 << shift);
     }
 
     /* ADON: 启动转换 (第二次写 ADON 在已上电时启动转换) */

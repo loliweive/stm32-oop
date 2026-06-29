@@ -126,9 +126,6 @@ static void _history_navigate(CLI *cli, int direction)
         return;
     }
 
-    int max_hist = (cli->history_count < CLI_HISTORY_DEPTH)
-                   ? cli->history_count : CLI_HISTORY_DEPTH;
-
     if (cli->history_index >= cli->history_count) {
         /* 回到最新 → 清空行 */
         _line_clear(cli);
@@ -167,7 +164,6 @@ static void _execute_line(CLI *cli)
     /* Tokenize: 按空格分割参数 */
     int    argc = 0;
     char  *argv[CLI_MAX_ARGS];
-    char  *token = cli->line;
     bool   in_token = false;
 
     /* 手动 tokenize (避免 strtok 修改原串) */
@@ -416,7 +412,7 @@ void cli_printf(const CLI *cli, const char *fmt, ...)
     int n = vsnprintf(buf, sizeof(buf), fmt, args);
     va_end(args);
     if (n > 0) {
-        cli->write_fn(buf, (size_t)(n < (int)sizeof(buf) ? n : sizeof(buf) - 1));
+        cli->write_fn(buf, (size_t)(n < (int)sizeof(buf) ? n : (int)sizeof(buf) - 1));
     }
 }
 

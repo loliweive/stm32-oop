@@ -29,7 +29,7 @@ typedef struct {
     uint32_t capacity;       /**< 总容量 (bytes) */
     uint16_t page_size;      /**< 页大小 (通常 256) */
     uint16_t sector_size;    /**< 扇区大小 (通常 4096) */
-    uint16_t block_size;     /**< 块大小 (通常 65536) */
+    uint32_t block_size;     /**< 块大小 (通常 65536) */
     char     name[12];       /**< 型号名 */
 } SpiFlashInfo;
 

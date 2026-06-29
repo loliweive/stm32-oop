@@ -14,6 +14,7 @@
 #include "ota_flash.h"
 #include "ota_config.h"
 #include "stm32f103xb.h"
+#include "crc32.h"
 #include <string.h>
 
 #define FLASH_KEY1  0x45670123UL
@@ -78,6 +79,9 @@ bool ota_flash_write(uint32_t addr, const uint8_t *data, size_t len)
 {
     if (!data || len == 0 || (addr & 1)) return false;
 
+    /* Flash 写入期间 CPU 停顿 — 关中断防止 ISR 访问 Flash 导致 HardFault */
+    __disable_irq();
+
     /* 设置编程模式 */
     FLASH->CR |= FLASH_CR_PG;
 
@@ -100,11 +104,13 @@ bool ota_flash_write(uint32_t addr, const uint8_t *data, size_t len)
         if (FLASH->SR & FLASH_SR_PGERR) {
             FLASH->SR |= FLASH_SR_PGERR; /* 清除标志 */
             FLASH->CR &= ~FLASH_CR_PG;
+            __enable_irq();
             return false;
         }
     }
 
     FLASH->CR &= ~FLASH_CR_PG;
+    __enable_irq();
     return true;
 }
 
@@ -122,30 +128,13 @@ void ota_flash_read(uint32_t addr, uint8_t *buf, size_t len)
     if (buf) memcpy(buf, (const void *)addr, len);
 }
 
-/* CRC32 — 软件实现 (避免依赖 zlib) */
-static uint32_t crc32_table[256];
-static bool crc32_table_ready = false;
-
-static void crc32_init_table(void)
-{
-    for (uint32_t i = 0; i < 256; i++) {
-        uint32_t crc = i;
-        for (int j = 0; j < 8; j++) {
-            crc = (crc >> 1) ^ ((crc & 1) ? 0xEDB88320UL : 0);
-        }
-        crc32_table[i] = crc;
-    }
-    crc32_table_ready = true;
-}
-
+/* CRC32 — uses unified utils/crc32.c */
 uint32_t ota_flash_crc32(uint32_t addr, size_t len)
 {
-    if (!crc32_table_ready) crc32_init_table();
-
     uint32_t crc = 0xFFFFFFFFUL;
     for (size_t i = 0; i < len; i++) {
         uint8_t byte = *(volatile uint8_t *)(addr + i);
-        crc = (crc >> 8) ^ crc32_table[(crc ^ byte) & 0xFF];
+        crc = crc32_update(crc, &byte, 1);
     }
     return crc ^ 0xFFFFFFFFUL;
 }

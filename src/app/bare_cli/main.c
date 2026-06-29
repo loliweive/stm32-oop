@@ -227,7 +227,7 @@ int main(void) {
             OledDisplay *d = &oled.base;
             oled_clear(d);
             oled_show_string(d, 0, 0, "Bare-Metal", OLED_FONT_8X16);
-            char buf[16]; int ti=(int)g_temp, tf=(int)((g_temp-ti)*10);
+            char buf[32]; int ti=(int)g_temp, tf=(int)((g_temp-ti)*10);
             if(tf<0)tf=-tf;
             snprintf(buf, sizeof(buf), "%d.%dC %u%%", ti, tf, (unsigned)g_hum);
             oled_show_string(d, 0, 16, buf, OLED_FONT_8X16);

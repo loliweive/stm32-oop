@@ -12,6 +12,7 @@
 #include "ota_config.h"
 #include "spi_flash.h"
 #include <string.h>
+#include "crc32.h"
 
 /* ── 内部辅助 ─────────────────────────────────────────────────── */
 static uint8_t  rx_buf[OTA_FRAME_MAX_SIZE];
@@ -19,20 +20,7 @@ static uint8_t  tx_buf[OTA_FRAME_MAX_SIZE];
 static uint32_t last_erased_page = 0xFFFFFFFF;  /* 追踪已擦页 */
 static uint8_t  page_buf[1024];  /* 外→内搬运用 */
 
-/* CRC32 (软件实现, ~150B ROM, 支持增量计算) */
-static uint32_t crc32_buf(const uint8_t *data, size_t len, uint32_t crc) {
-    static const uint32_t table[16] = {
-        0x00000000,0x1DB71064,0x3B6E20C8,0x26D930AC,
-        0x76DC4190,0x6B6B51F4,0x4DB26158,0x5005713C,
-        0xEDB88320,0xF00F9344,0xD6D6A3E8,0xCB61B38C,
-        0x9B64C2B0,0x86D3D2D4,0xA00AE278,0xBDBDF21C
-    };
-    for (size_t i = 0; i < len; i++) {
-        crc = table[(crc ^ data[i]) & 0xF] ^ (crc >> 4);
-        crc = table[(crc ^ (data[i] >> 4)) & 0xF] ^ (crc >> 4);
-    }
-    return crc;
-}
+/* CRC32 — uses unified utils/crc32.c */
 
 static void set_state(OtaClient *c, OtaClientState s) { c->state = s; }
 
@@ -175,7 +163,7 @@ bool ota_client_poll(OtaClient *client)
                 size_t chunk = client->received_bytes - off;
                 if (chunk > sizeof(page_buf)) chunk = sizeof(page_buf);
                 spi_flash_read(ext, off, page_buf, chunk);
-                crc = crc32_buf(page_buf, chunk, crc);
+                crc = crc32_update(crc, page_buf, chunk);
             }
             crc ^= 0xFFFFFFFF;
         } else {

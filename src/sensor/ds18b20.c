@@ -26,7 +26,7 @@ static bool _read(Sensor *base, float *temp_c, uint8_t *humidity)
 
 static const char *_name(Sensor *base)       { (void)base; return "DS18B20"; }
 static bool _is_present(Sensor *base)        { return ((DS18B20 *)base)->bus != NULL; }
-static bool _init(Sensor *base)              { return true; } /* 初始化在 create 中完成 */
+static bool _init(Sensor *base)              { (void)base; return true; } /* 初始化在 create 中完成 */
 
 static const SensorVtable ds18b20_vtable = {
     .read        = _read,

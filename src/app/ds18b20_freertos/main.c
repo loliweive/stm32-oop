@@ -73,18 +73,18 @@ typedef struct {
 static QueueHandle_t temp_queue;
 static Sensor       *sensor;          /* ← 多态指针! 不关心具体类型 */
 static Sensor       *light_sensor;     /* 光敏传感器 (常驻, 独立 IO) */
-static OneWireBus    ow_bus;          /* DS18B20 复用 */
-static DS18B20       ds18b20_obj;     /* DS18B20 实例 */
+static OneWireBus    ow_bus __attribute__((unused));          /* DS18B20 复用 */
+static DS18B20       ds18b20_obj __attribute__((unused));     /* DS18B20 实例 */
 static DHT11         dht11_obj;       /* DHT11 实例 */
 static LightSensor   light_obj;       /* M7 光敏实例 */
-static BMP280        bmp280_obj;       /* BMP280 I2C 温压实例 */
+static BMP280        bmp280_obj __attribute__((unused));       /* BMP280 I2C 温压实例 */
 static UartPort      uart;
 static GpioPin       led;
 static GpioPin       btn;            /* PB14 上拉按键 */
 static CLI           cli;
 static SSD1306       oled;
 static SpiFlash      spiflash;
-static bool          stream_mode = false;
+static volatile bool stream_mode = false;
 
 /* ── UART 写回调 (给 CLI) ──────────────────────────────────────── */
 static void uart_cli_write(const char *str, size_t len)
@@ -114,9 +114,10 @@ static void cmd_iwdg(CLI *c, int argc, char **argv)
     (void)argc; (void)argv;
     cli_printf(c, "IWDG test: stop feeding, expect reset in ~10s...\r\n");
     /* SysTick 精确计数 30s, IWDG ~10-26s 触发 (LSI 17-40kHz, RLR=4095) */
-    uint32_t ms = 0;
-    while (ms < 30000) {
-        if (SysTick->CTRL & (1<<16)) ms++;
+    uint32_t elapsed = 0;
+    while (elapsed < 30000) {
+        vTaskDelay(pdMS_TO_TICKS(100));  /* Yield to scheduler every 100ms */
+        elapsed += 100;
     }
     cli_printf(c, "IWDG did NOT reset — watchdog may be disabled\r\n");
 }
@@ -335,7 +336,7 @@ static void cmd_oled(CLI *c, int argc, char **argv)
     oled_show_string(d, 0, 32, sensor_name(sensor), OLED_FONT_6X8);
     const SpiFlashInfo *fi = spi_flash_get_info(&spiflash);
     char buf[32];
-    int n = snprintf(buf, sizeof(buf), "%s %luKB", fi->name, (unsigned long)(fi->capacity/1024));
+    snprintf(buf, sizeof(buf), "%s %luKB", fi->name, (unsigned long)(fi->capacity/1024));
     oled_show_string(d, 0, 42, buf, OLED_FONT_6X8);
     oled_show_string(d, 0, 52, "Type help for CLI", OLED_FONT_6X8);
     oled_flush(d);
@@ -458,7 +459,7 @@ static void task_sensor(void *params)
 
         /* 刷新 OLED 显示 */
         if (r.valid) {
-            char l1[22], l2[22];
+            char l1[32], l2[22];
             int ti = (int)r.temp_c, tf = (int)((r.temp_c-ti)*10);
             if (tf < 0) tf = -tf;
             snprintf(l1, sizeof(l1), "%d.%d C", ti, tf);
@@ -485,8 +486,12 @@ static void task_sensor(void *params)
             _tx('D');_tx('H');_tx('T');_tx(':');_tx(' ');
             int ti=(int)r.temp_c; if(ti>=10)_tx('0'+ti/10);
             _tx('0'+ti%10);_tx('.');_tx('0');_tx('C');_tx(' ');
-            if(r.humidity!=255){int h=r.humidity; if(h>=100)_tx('0'+h/100);
-             if(h>=10)_tx('0'+(h/10)%10);_tx('0'+h%10);_tx('%');}
+            if(r.humidity!=255){
+                int h=r.humidity;
+                if(h>=100)_tx('0'+h/100);
+                if(h>=10)_tx('0'+(h/10)%10);
+                _tx('0'+h%10);_tx('%');
+            }
             _tx('\r');_tx('\n');
             #undef _tx
         }
@@ -555,8 +560,12 @@ static void task_cli(void *params)
                     _tx('D');_tx('H');_tx('T');_tx(':');_tx(' ');
                     int ti=(int)sr.temp_c; if(ti>=10)_tx('0'+ti/10);
                     _tx('0'+ti%10);_tx('.');_tx('0');_tx('C');_tx(' ');
-                    if(sr.humidity!=255){int h=sr.humidity; if(h>=100)_tx('0'+h/100);
-                     if(h>=10)_tx('0'+(h/10)%10); _tx('0'+h%10); _tx('%');}
+                    if(sr.humidity!=255){
+                        int h=sr.humidity;
+                        if(h>=100)_tx('0'+h/100);
+                        if(h>=10)_tx('0'+(h/10)%10);
+                        _tx('0'+h%10);_tx('%');
+                    }
                     _tx('\r');_tx('\n');
                     #undef _tx
                 }

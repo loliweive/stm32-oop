@@ -22,20 +22,6 @@ static bool _read_reg(BMP280 *bmp, uint8_t reg, uint8_t *val) {
     return i2c_read_reg(&p, bmp->addr, reg, val);
 }
 
-static bool _read_buf(BMP280 *bmp, uint8_t reg, uint8_t *buf, size_t len) {
-    I2cPort p; I2cPort_ctor(&p, bmp->i2c, 100000, 36000000);
-    /* Write register address, then read */
-    /* i2c_read reads from current address — not what we need.
-       Use raw approach: write reg, restart, read */
-    /* Actually, i2c_read_reg only reads 1 byte. For multi-byte,
-       we need the raw I2C or a helper. Let's do it manually. */
-    /* Use i2c_read which reads after a start+address — we need to
-       do write(reg) + restart + read. i2c_read doesn't support this.
-       Fallback: read one byte at a time with i2c_read_reg. */
-    (void)reg; (void)buf; (void)len;
-    return false;
-}
-
 /* BMP280 multi-byte read: write register, restart, read N bytes */
 #include "stm32f103xb.h"
 static bool _read_multi(BMP280 *bmp, uint8_t reg, uint8_t *buf, size_t len) {
@@ -145,7 +131,7 @@ static bool _read(Sensor *base, float *temp_c, uint8_t *humidity) {
         return false;
     }
 
-    int32_t adc_P = ((int32_t)data[0] << 12) | ((int32_t)data[1] << 4) | (data[2] >> 4);
+    int32_t adc_P __attribute__((unused)) = ((int32_t)data[0] << 12) | ((int32_t)data[1] << 4) | (data[2] >> 4);
     int32_t adc_T = ((int32_t)data[3] << 12) | ((int32_t)data[4] << 4) | (data[5] >> 4);
 
     int32_t t_raw = _compensate_T(self, adc_T);

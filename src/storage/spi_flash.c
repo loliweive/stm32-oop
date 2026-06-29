@@ -89,11 +89,11 @@ static bool _detect_flash(SpiFlash *flash)
     flash->info.block_size  = 65536;
 
     switch (id >> 8) {  /* 高 16 bits = manufacturer + type */
-        case 0xEF4015: flash->info.capacity = 2*1024*1024;  strcpy(flash->info.name,"W25Q16"); break;
-        case 0xEF4016: flash->info.capacity = 4*1024*1024;  strcpy(flash->info.name,"W25Q32"); break;
-        case 0xEF4017: flash->info.capacity = 8*1024*1024;  strcpy(flash->info.name,"W25Q64"); break;
-        case 0xEF4018: flash->info.capacity = 16*1024*1024; strcpy(flash->info.name,"W25Q128");break;
-        default:       flash->info.capacity = 4*1024*1024;  strcpy(flash->info.name,"Unknown"); flash->ready=false; return false;
+        case 0xEF4015: flash->info.capacity = 2*1024*1024;  strncpy(flash->info.name,"W25Q16",sizeof(flash->info.name)); break;
+        case 0xEF4016: flash->info.capacity = 4*1024*1024;  strncpy(flash->info.name,"W25Q32",sizeof(flash->info.name)); break;
+        case 0xEF4017: flash->info.capacity = 8*1024*1024;  strncpy(flash->info.name,"W25Q64",sizeof(flash->info.name)); break;
+        case 0xEF4018: flash->info.capacity = 16*1024*1024; strncpy(flash->info.name,"W25Q128",sizeof(flash->info.name));break;
+        default:       flash->info.capacity = 4*1024*1024;  strncpy(flash->info.name,"Unknown",sizeof(flash->info.name)); flash->ready=false; return false;
     }
     flash->ready = true;
     return true;

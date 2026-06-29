@@ -326,7 +326,28 @@ openocd -f interface/stlink.cfg -f target/stm32f1x.cfg \
 
 ## 12. 工作日志
 
-### 2026-06-27 (本次会话)
+### 2026-06-29 (debug 分支)
+1. **构建健康修复**:
+   - 修复 `spi_flash.h` — block_size uint16_t→uint32_t (65536溢出BUG)
+   - 所有 ARM 构建目标启用 `-Werror`
+   - 修复 15+ 编译警告 (cli.c/ssd1306.c/font16x16.c/bmp280.c/ds18b20.c/main.c)
+2. **关键问题修复**:
+   - `oled_printf` vsprintf→vsnprintf (栈溢出风险)
+   - `spi_flash` strcpy→strncpy (缓冲区溢出)
+   - `cmd_iwdg()` busy-wait→vTaskDelay (30s任务饿死)
+   - I2C 总线超时恢复 (SWRST+STOP, 防OLED死锁)
+   - Flash 写入时 `__disable_irq()` (防ISR访问Flash→HardFault)
+   - 状态机 NULL target 守卫 (自转移不崩溃)
+3. **高优先级修复**:
+   - `stream_mode` 添加 volatile (多任务可见性)
+   - ADC SMPR1 通道10-17采样时间配置
+   - OLED vtable `.printf=NULL` 注释说明
+4. **架构改善**:
+   - CRC32 去重 → `utils/crc32.c` 统一实现
+   - 移除 Object 基类死代码
+5. **新增文件**: `src/utils/crc32.h`, `src/utils/crc32.c`
+
+### 2026-06-27 (上次会话)
 1. **OLED 移植**: 从江协科技 OLED 驱动 V2.0 移植到项目
 2. **OOP 重构**: 创建 `OledDisplay` 抽象接口 (vtable 模式, 类似 Sensor/GPIO)
 3. **SSD1306 重写**: 完整实现 22 个 vtable 方法

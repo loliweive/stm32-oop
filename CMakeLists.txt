@@ -48,13 +48,13 @@ elseif(BUILD_MODE STREQUAL "stm32f103")
     add_executable(${PROJECT_NAME}
         ${STM32_SRC_DIR}/startup/startup_stm32f103c8.s
         ${STM32_SRC_DIR}/startup/system_stm32f1.c
-        ${STM32_SRC_DIR}/core/object.c
         ${STM32_SRC_DIR}/core/ring_buffer.c
         ${STM32_SRC_DIR}/core/list.c
         ${STM32_SRC_DIR}/core/state_machine.c
         ${STM32_SRC_DIR}/utils/log.c
         ${STM32_SRC_DIR}/utils/delay.c
         ${STM32_SRC_DIR}/utils/assert.c
+        ${STM32_SRC_DIR}/utils/crc32.c
         ${STM32_SRC_DIR}/hal/gpio.c
         ${STM32_SRC_DIR}/hal/rcc.c
         ${STM32_SRC_DIR}/hal/i2c.c
@@ -77,7 +77,7 @@ elseif(BUILD_MODE STREQUAL "stm32f103")
 
     target_compile_options(${PROJECT_NAME} PRIVATE
         -mcpu=cortex-m3 -mthumb -mfloat-abi=soft
-        -Os -g3 -Wall -Wextra
+        -Os -g3 -Wall -Wextra -Werror
         -ffunction-sections -fdata-sections -fno-common
     )
 
@@ -145,13 +145,13 @@ elseif(BUILD_MODE STREQUAL "freertos")
     add_executable(${PROJECT_NAME}
         ${STM32_SRC_DIR}/startup/startup_stm32f103c8.s
         ${STM32_SRC_DIR}/startup/system_stm32f1.c
-        ${STM32_SRC_DIR}/core/object.c
         ${STM32_SRC_DIR}/core/ring_buffer.c
         ${STM32_SRC_DIR}/core/list.c
         ${STM32_SRC_DIR}/core/state_machine.c
         ${STM32_SRC_DIR}/utils/log.c
         ${STM32_SRC_DIR}/utils/delay.c
         ${STM32_SRC_DIR}/utils/assert.c
+        ${STM32_SRC_DIR}/utils/crc32.c
         ${STM32_SRC_DIR}/hal/gpio.c
         ${STM32_SRC_DIR}/hal/uart.c
         ${STM32_SRC_DIR}/hal/rcc.c
@@ -186,9 +186,9 @@ elseif(BUILD_MODE STREQUAL "freertos")
 
     target_compile_options(${PROJECT_NAME} PRIVATE
         -mcpu=cortex-m3 -mthumb -mfloat-abi=soft
-        -O0 -g3 -Wall -Wextra
+        -O0 -g3 -Wall -Wextra -Werror
         -ffunction-sections -fdata-sections -fno-common
-        -Wno-maybe-uninitialized
+        -Wno-maybe-uninitialized -Wno-unused-variable -Wno-unused-but-set-variable
     )
 
     target_link_options(${PROJECT_NAME} PRIVATE
@@ -252,7 +252,7 @@ elseif(BUILD_MODE STREQUAL "bootloader")
 
     target_compile_options(${PROJECT_NAME} PRIVATE
         -mcpu=cortex-m3 -mthumb -mfloat-abi=soft
-        -Os -g3 -Wall -Wextra
+        -Os -g3 -Wall -Wextra -Werror
         -ffunction-sections -fdata-sections -fno-common
     )
 

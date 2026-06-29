@@ -31,6 +31,14 @@
  * SSD1306 每页刷新需要一次发送 129 字节 (控制字节+128数据)，
  * 直接寄存器操作显著减少 CPU 开销。
  */
+/* I2C 总线恢复 — 外设复位 + STOP，解锁被从机拉死的总线 */
+static void _i2c_recover(I2C_Type *i)
+{
+    i->CR1 |= I2C_CR1_STOP;       /* 确保 STOP */
+    i->CR1 |= I2C_CR1_SWRST;      /* 软件复位 I2C 外设 */
+    i->CR1 &= ~I2C_CR1_SWRST;     /* 解除复位 */
+}
+
 static bool i2c_write_raw(void *i2c, uint8_t addr, const uint8_t *data, size_t len)
 {
     I2C_Type *i = (I2C_Type *)i2c;
@@ -39,13 +47,13 @@ static bool i2c_write_raw(void *i2c, uint8_t addr, const uint8_t *data, size_t l
     /* 等待总线空闲 */
     to = 100000;
     while ((i->SR2 & I2C_SR2_BUSY) && --to) {}
-    if (!to) return false;
+    if (!to) { _i2c_recover(i); return false; }
 
     /* START */
     i->CR1 |= I2C_CR1_START;
     to = 100000;
     while (!(i->SR1 & I2C_SR1_SB) && --to) {}
-    if (!to) { i->CR1 |= I2C_CR1_STOP; return false; }
+    if (!to) { _i2c_recover(i); return false; }
 
     /* ADDR (write) */
     i->DR = (uint8_t)(addr << 1);
@@ -53,7 +61,7 @@ static bool i2c_write_raw(void *i2c, uint8_t addr, const uint8_t *data, size_t l
     while (!(i->SR1 & (I2C_SR1_ADDR | I2C_SR1_AF)) && --to) {}
     if (!to || (i->SR1 & I2C_SR1_AF)) {
         (void)i->SR2;
-        i->CR1 |= I2C_CR1_STOP;
+        _i2c_recover(i);
         return false;
     }
     (void)i->SR2; /* clear ADDR */
@@ -62,7 +70,7 @@ static bool i2c_write_raw(void *i2c, uint8_t addr, const uint8_t *data, size_t l
     for (size_t n = 0; n < len; n++) {
         to = 100000;
         while (!(i->SR1 & I2C_SR1_TXE) && --to) {}
-        if (!to) { i->CR1 |= I2C_CR1_STOP; return false; }
+        if (!to) { _i2c_recover(i); return false; }
         i->DR = data[n];
     }
 
@@ -420,10 +428,14 @@ static void _ssd1306_draw_triangle(OledDisplay *self,
         _ssd1306_draw_line(self, x1, y1, x2, y2);
     } else {
         int16_t minx = x0, miny = y0, maxx = x0, maxy = y0;
-        if (x1 < minx) minx = x1; if (x2 < minx) minx = x2;
-        if (y1 < miny) miny = y1; if (y2 < miny) miny = y2;
-        if (x1 > maxx) maxx = x1; if (x2 > maxx) maxx = x2;
-        if (y1 > maxy) maxy = y1; if (y2 > maxy) maxy = y2;
+        if (x1 < minx) minx = x1;
+        if (x2 < minx) minx = x2;
+        if (y1 < miny) miny = y1;
+        if (y2 < miny) miny = y2;
+        if (x1 > maxx) maxx = x1;
+        if (x2 > maxx) maxx = x2;
+        if (y1 > maxy) maxy = y1;
+        if (y2 > maxy) maxy = y2;
 
         for (int16_t i = minx; i <= maxx; i++) {
             for (int16_t j = miny; j <= maxy; j++) {
@@ -814,7 +826,7 @@ void oled_printf(OledDisplay *self, int16_t x, int16_t y,
     char str[256];
     va_list arg;
     va_start(arg, fmt);
-    vsprintf(str, fmt, arg);
+    vsnprintf(str, sizeof(str), fmt, arg);
     va_end(arg);
     _ssd1306_show_string(self, x, y, str, font_size);
 }
@@ -855,7 +867,10 @@ static const OledVtable _ssd1306_vtable = {
     .show_image   = _ssd1306_show_image,
 
     /* 格式化输出 */
-    .printf       = NULL, /* printf 使用 varargs, 由 oled_printf 直接调用 */
+    /* NOTE: varargs 不能通过函数指针安全调用 (C 标准未定义行为)。
+       oled_printf 是独立函数，直接调用 ssd1306 内部实现。
+       此槽位故意为 NULL — 应使用 oled_printf() 而非 vtable->printf() */
+    .printf       = NULL,
 };
 
 /* ═══════════════════════════════════════════════════════
