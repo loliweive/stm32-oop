@@ -7,6 +7,7 @@
 #include "spi.h"
 #include "stm32f103xb.h"
 #include <string.h>
+#include <stdio.h>
 
 /* ── SPI Flash 命令 ─────────────────────────────────────── */
 #define CMD_WRITE_ENABLE    0x06
@@ -76,12 +77,26 @@ static bool _detect_flash(SpiFlash *flash)
     flash->info.sector_size = 4096;
     flash->info.block_size  = 65536;
 
-    switch (id >> 8) {  /* 高 16 bits = manufacturer + type */
-        case 0xEF4015: flash->info.capacity = 2*1024*1024;  strncpy(flash->info.name,"W25Q16",sizeof(flash->info.name)); break;
-        case 0xEF4016: flash->info.capacity = 4*1024*1024;  strncpy(flash->info.name,"W25Q32",sizeof(flash->info.name)); break;
-        case 0xEF4017: flash->info.capacity = 8*1024*1024;  strncpy(flash->info.name,"W25Q64",sizeof(flash->info.name)); break;
-        case 0xEF4018: flash->info.capacity = 16*1024*1024; strncpy(flash->info.name,"W25Q128",sizeof(flash->info.name));break;
-        default:       flash->info.capacity = 4*1024*1024;  strncpy(flash->info.name,"Unknown",sizeof(flash->info.name)); flash->ready=false; return false;
+    /* 高 16 bits = manufacturer + type (e.g. 0xEF40 = Winbond W25Q) */
+    switch (id >> 8) {
+        case 0xEF40: {  /* Winbond W25Q series */
+            uint8_t cap = (uint8_t)(id & 0xFF);
+            flash->info.capacity = (uint32_t)1 << cap;  /* 2^cap bytes */
+            switch (cap) {
+                case 0x15: strncpy(flash->info.name,"W25Q16", sizeof(flash->info.name)); break;
+                case 0x16: strncpy(flash->info.name,"W25Q32", sizeof(flash->info.name)); break;
+                case 0x17: strncpy(flash->info.name,"W25Q64", sizeof(flash->info.name)); break;
+                case 0x18: strncpy(flash->info.name,"W25Q128",sizeof(flash->info.name)); break;
+                default:   snprintf(flash->info.name,sizeof(flash->info.name),"W25Q%lu",(unsigned long)(flash->info.capacity/(1024*1024))); break;
+            }
+            flash->ready = true;
+            return true;
+        }
+        default:
+            flash->info.capacity = 0;
+            strncpy(flash->info.name, "Unknown", sizeof(flash->info.name));
+            flash->ready = false;
+            return false;
     }
     flash->ready = true;
     return true;
